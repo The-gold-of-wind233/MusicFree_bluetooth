@@ -12,6 +12,22 @@ on:
         description: '桌面上显示的 App 名字（留空 = MusicFree）'
         required: false
         default: ''
+      build_type:
+        description: '构建类型：release（推荐，和官方版一致）/ debug'
+        required: false
+        default: 'release'
+        type: choice
+        options:
+          - release
+          - debug
+      without_patch:
+        description: '排错用：true = 编不打补丁的纯净原版（用来对比是不是补丁导致打不开）'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 jobs:
   build:
@@ -21,6 +37,26 @@ jobs:
     steps:
       - name: 拉取代码
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # 排错用：把补丁文件全部还原成官方原版，编一个纯净版出来做 A/B 对比
+      - name: 还原成纯净原版（可选）
+        if: ${{ inputs.without_patch == 'true' }}
+        run: |
+          set -e
+          git fetch --tags --force
+          rm -f src/core/bluetoothLyric.ts
+          git checkout v1.0.0-beta.3 -- \
+            src/core/lyricManager.ts \
+            src/pages/setting/settingTypes/basicSetting.tsx \
+            src/types/core/config.d.ts \
+            src/types/core/i18n/index.d.ts \
+            src/core/i18n/languages/zh-cn.json \
+            src/core/i18n/languages/zh-tw.json \
+            src/core/i18n/languages/en-us.json
+          echo "=== 已还原为纯净原版，确认补丁不存在 ==="
+          ls src/core/bluetoothLyric.ts 2>/dev/null || echo "bluetoothLyric.ts 已移除 ✓"
 
       - name: 安装 Node 22
         uses: actions/setup-node@v5
@@ -194,11 +230,15 @@ jobs:
         env:
           ANDROID_HOME: ${{ steps.sdk.outputs.root }}
           ANDROID_SDK_ROOT: ${{ steps.sdk.outputs.root }}
+          BUILD_TYPE: ${{ inputs.build_type }}
         run: |
           set -o pipefail
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug \
+          # release 更接近官方版（关闭 dev support、不依赖 Metro），优先用它排查打不开的问题
+          if [ "$BUILD_TYPE" = "debug" ]; then TASK=assembleDebug; else TASK=assembleRelease; fi
+          echo "构建任务: $TASK"
+          ./gradlew $TASK \
             --no-daemon \
             --stacktrace \
             -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m" \
@@ -219,12 +259,29 @@ jobs:
           fi
           echo '```' >> $GITHUB_STEP_SUMMARY
 
+      # 项目开了 abi 分包，会同时产出 universal / arm64-v8a / armeabi-v7a / x86 / x86_64 五个包。
+      # 这里只保留 universal（通用包，任何手机都能装），避免挑错架构导致装上打不开。
+      - name: 只保留通用包 universal
+        run: |
+          set -e
+          BT="${{ inputs.build_type }}"
+          if [ "$BT" = "debug" ]; then DIR=debug; SUF=debug; else DIR=release; SUF=release; fi
+          cd android/app/build/outputs/apk/$DIR
+          echo "=== 全部产物 ==="
+          ls -lh *.apk
+          mkdir -p /tmp/onlyuniversal
+          cp app-universal-$SUF.apk /tmp/onlyuniversal/
+          rm -f *.apk
+          cp /tmp/onlyuniversal/app-universal-$SUF.apk .
+          echo "=== 最终保留 ==="
+          ls -lh *.apk
+
       - name: 上传 APK
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: MusicFree-蓝牙歌词版
-          path: android/app/build/outputs/apk/debug/*.apk
+          name: MusicFree-蓝牙歌词版-universal
+          path: android/app/build/outputs/apk/**/app-universal-*.apk
           if-no-files-found: warn
 
       - name: 上传 Gradle 完整日志
