@@ -349,6 +349,14 @@ export interface ILanguageData {
     "basicSettings.lyric.fontSize": string; // 字体大小
     "basicSettings.lyric.textColor": string; // 文本颜色
     "basicSettings.lyric.backgroundColor": string; // 文本背景色
+    "basicSettings.lyric.bluetoothLyric": string; // 开启蓝牙歌词（车机显示）
+    "basicSettings.lyric.bluetoothLyricDesc": string; // 蓝牙歌词的说明
+    "basicSettings.lyric.bluetoothLyricField": string; // 车机显示位置
+    "basicSettings.lyric.bluetoothLyricField.split": string; // 歌词+歌名分开显示
+    "basicSettings.lyric.bluetoothLyricField.title": string; // 歌曲名位置
+    "basicSettings.lyric.bluetoothLyricField.titleAppend": string; // 接在歌曲名后面
+    "basicSettings.lyric.bluetoothLyricField.artist": string; // 歌手位置
+    "basicSettings.lyric.bluetoothLyricTranslation": string; // 蓝牙歌词附带翻译
     
     "basicSettings.cache": string; // 缓存
     "basicSettings.cache.musicCacheLimit": string; // 音乐缓存上限
