@@ -3,6 +3,15 @@ name: 编译 MusicFree APK
 # 触发方式：手动点按钮开始（在 GitHub 仓库的 Actions 页面）
 on:
   workflow_dispatch:
+    inputs:
+      new_package:
+        description: '新包名（留空 = 不改，会和手机上已装的官方版互相覆盖）'
+        required: false
+        default: ''
+      new_name:
+        description: '桌面上显示的 App 名字（留空 = MusicFree）'
+        required: false
+        default: ''
 
 jobs:
   build:
@@ -24,12 +33,96 @@ jobs:
           java-version: "17"
           distribution: "temurin"
 
-      # ★ 关键：补上仓库里没有的 keystore.properties
+      # ---- 可选：改包名，让新 App 和官方版共存 ----
+      # 运行时填了 new_package 才会执行。
+      # 注意：原项目的 Kotlin 文件里包名首段 fun 是 Kotlin 关键字，
+      # 源码里写的是 package `fun`.upup.musicfree（带反引号），
+      # 所以这里必须同时替换「带反引号」和「纯点分」两种写法。
+      - name: 改包名（可选）
+        if: ${{ inputs.new_package != '' }}
+        run: |
+          python3 - <<'PYEOF'
+          import os, re, shutil, sys
+
+          OLD = "fun.upup.musicfree"
+          NEW = "${{ inputs.new_package }}".strip()
+          NEW_NAME = "${{ inputs.new_name }}".strip()
+
+          if not NEW:
+              print("未填写新包名，跳过")
+              sys.exit(0)
+
+          parts = NEW.split(".")
+          if len(parts) < 2 or not all(re.fullmatch(r"[a-z][a-z0-9_]*", p) for p in parts):
+              print("::error::包名不合法：%s（要求小写字母开头，只能含小写字母/数字/下划线，至少两段）" % NEW)
+              sys.exit(1)
+
+          # Kotlin 硬关键字，作为包名首段必须加反引号
+          KW = {"fun","in","is","as","object","package","return","this","val","var","when",
+                "if","else","for","while","do","break","continue","class","interface",
+                "super","throw","try","typealias","typeof","null","true","false"}
+          kot = lambda p: ".".join("`%s`" % x if x in KW else x for x in p.split("."))
+          OK, NK = kot(OLD), kot(NEW)
+
+          # 1) build.gradle: namespace + applicationId
+          p = "android/app/build.gradle"
+          s = open(p, encoding="utf-8").read()
+          open(p, "w", encoding="utf-8").write(s.replace('"%s"' % OLD, '"%s"' % NEW))
+
+          # 2) AndroidManifest.xml: package 属性
+          p = "android/app/src/main/AndroidManifest.xml"
+          s = open(p, encoding="utf-8").read()
+          open(p, "w", encoding="utf-8").write(s.replace('"%s"' % OLD, '"%s"' % NEW))
+
+          # 3) 所有 .kt 文件：package 声明 + import
+          root = "android/app/src/main/java"
+          n = 0
+          for dp, _, fns in os.walk(root):
+              for fn in fns:
+                  if not fn.endswith(".kt"):
+                      continue
+                  fp = os.path.join(dp, fn)
+                  s = open(fp, encoding="utf-8").read()
+                  s2 = s.replace(OK, NK).replace(OLD, NEW)   # 两种写法都要换
+                  if s2 != s:
+                      open(fp, "w", encoding="utf-8").write(s2)
+                      n += 1
+          print("已改名的 Kotlin 文件: %d" % n)
+
+          # 4) 搬源码目录
+          od = os.path.join(root, *OLD.split("."))
+          nd = os.path.join(root, *NEW.split("."))
+          os.makedirs(os.path.dirname(nd), exist_ok=True)
+          if os.path.isdir(nd):
+              shutil.rmtree(nd)
+          shutil.move(od, nd)
+          shutil.rmtree(os.path.join(root, OLD.split(".")[0]), ignore_errors=True)
+          print("目录已迁移到: %s" % nd)
+
+          # 5) 可选：桌面显示名
+          if NEW_NAME:
+              p = "android/app/src/main/res/values/strings.xml"
+              if os.path.exists(p):
+                  s = open(p, encoding="utf-8").read()
+                  s2 = re.sub(r'(name="app_name")>[^<]*<', r'\1>%s<' % NEW_NAME, s)
+                  if s2 != s:
+                      open(p, "w", encoding="utf-8").write(s2)
+                      print("App 名称改为: %s" % NEW_NAME)
+
+          print("=== 改包名完成: %s -> %s ===" % (OLD, NEW))
+          PYEOF
+
+          echo "=== 改名结果抽查 ==="
+          grep -n "namespace\|applicationId" android/app/build.gradle
+          head -1 android/app/src/main/AndroidManifest.xml
+          find android/app/src/main/java -name "*.kt" | head -3
+
+      # ★ 补上仓库里没有的 keystore.properties
       # android/app/build.gradle 第 143 行有 storeFile file(keystoreProperties['RELEASE_STORE_FILE'])
-      # 而 keystore.properties 被 .gitignore 忽略了，仓库里根本没有 —— 取出来是 null，
-      # project ':app' 配置阶段就会抛 "path may not be null or empty string. path='null'"
-      # 注意：这个 signingConfigs 是在【配置阶段】求值的，所以即使只编 Debug 也会踩到。
-      # 这里我们复用仓库自带的 android/app/debug.keystore（标准口令），只为让它非空。
+      # 而 keystore.properties 被 .gitignore 忽略了，仓库里没有 —— 取出来是 null，
+      # 配置阶段就会抛 "path may not be null or empty string. path='null'"
+      # signingConfigs 是配置阶段求值的，所以即使只编 Debug 也会踩到。
+      # 这里复用仓库自带的 android/app/debug.keystore（标准口令），只为让它非空。
       - name: 补 keystore.properties
         run: |
           set -e
@@ -41,7 +134,6 @@ jobs:
           EOF
           echo "--- 写入内容 ---"
           cat android/keystore.properties
-          echo "--- 确认 debug.keystore 存在 ---"
           ls -l android/app/debug.keystore
 
       # GitHub 的 ubuntu 镜像自带 Android SDK，这里只是把 sdkmanager 找出来并算出 SDK 根目录
