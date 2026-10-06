@@ -7,13 +7,13 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
 
     steps:
       - name: 拉取代码
         uses: actions/checkout@v4
 
-      - name: 安装 Node
+      - name: 安装 Node 20
         uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -24,23 +24,48 @@ jobs:
           java-version: "17"
           distribution: "temurin"
 
-      - name: 安装 Android NDK
+      - name: 安装 Android 命令行工具
+        uses: android-actions/setup-android@v3
+
+      - name: 安装 SDK 组件（platform 35 / build-tools 35 / NDK 26）
         run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125" || true
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "build-tools;35.0.0" || true
+          set -e
+          echo "=== 接受许可 ==="
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          echo "=== 安装 ==="
+          sdkmanager --install "platforms;android-35"
+          sdkmanager --install "build-tools;35.0.0"
+          sdkmanager --install "ndk;26.1.10909125"
+          echo "=== 已安装清单 ==="
+          sdkmanager --list_installed
 
       - name: 安装 JS 依赖
         run: |
-          npm install --legacy-peer-deps
+          set -e
+          npm ci --prefer-offline --no-audit --legacy-peer-deps \
+            || npm install --legacy-peer-deps
+          echo "=== 校验关键依赖 ==="
+          ls -d node_modules/@expo/cli node_modules/react-native node_modules/@react-native/gradle-plugin
 
       - name: 编译 APK
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --stacktrace \
+            -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
 
       - name: 上传 APK
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: MusicFree-蓝牙歌词版
           path: android/app/build/outputs/apk/debug/*.apk
+
+      - name: 失败时输出 Gradle 报告
+        if: failure()
+        run: |
+          echo "=== 查找 Gradle 报错 ==="
+          find android -name "*.html" -path "*reports*" 2>/dev/null | head
+          ls android/app/build/outputs/apk/debug/ 2>/dev/null || echo "没有产物"
