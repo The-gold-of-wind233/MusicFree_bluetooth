@@ -11,33 +11,65 @@ jobs:
 
     steps:
       - name: 拉取代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: 安装 Node 20
-        uses: actions/setup-node@v4
+      - name: 安装 Node 22
+        uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: 安装 JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: "17"
           distribution: "temurin"
 
-      - name: 安装 Android 命令行工具
-        uses: android-actions/setup-android@v3
+      # 不依赖第三方 android-setup action：GitHub 的 ubuntu 镜像自带 Android SDK，
+      # 这里只是把 sdkmanager 的位置找出来并放到 PATH 上。
+      - name: 定位 sdkmanager
+        id: sdk
+        run: |
+          set -e
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          SDKMAN=""
+          for p in \
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+            "/usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager" \
+            "$ANDROID_HOME/tools/bin/sdkmanager"
+          do
+            if [ -n "$p" ] && [ -x "$p" ]; then SDKMAN="$p"; break; fi
+          done
+          if [ -z "$SDKMAN" ]; then
+            echo "没找到现成的 sdkmanager，搜索一下"
+            SDKMAN=$(find /usr/local/lib/android "$ANDROID_HOME" -name sdkmanager -type f 2>/dev/null | head -1)
+          fi
+          if [ -z "$SDKMAN" ]; then
+            echo "::error::找不到 sdkmanager，请查看日志里的 SDK 目录结构"
+            ls -R /usr/local/lib/android/sdk 2>/dev/null | head -40
+            exit 1
+          fi
+          echo "使用: $SDKMAN"
+          echo "path=$SDKMAN" >> $GITHUB_OUTPUT
+          echo "$(dirname "$SDKMAN")" >> $GITHUB_PATH
 
       - name: 安装 SDK 组件（platform 35 / build-tools 35 / NDK 26）
         run: |
           set -e
+          SDKMAN="${{ steps.sdk.outputs.path }}"
           echo "=== 接受许可 ==="
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          echo "=== 安装 ==="
-          sdkmanager --install "platforms;android-35"
-          sdkmanager --install "build-tools;35.0.0"
-          sdkmanager --install "ndk;26.1.10909125"
+          yes | "$SDKMAN" --licenses > /dev/null 2>&1 || true
+          echo "=== 安装 platform-tools ==="
+          "$SDKMAN" --install "platform-tools"
+          echo "=== 安装 platforms;android-35 ==="
+          "$SDKMAN" --install "platforms;android-35"
+          echo "=== 安装 build-tools;35.0.0 ==="
+          "$SDKMAN" --install "build-tools;35.0.0"
+          echo "=== 安装 ndk;26.1.10909125 ==="
+          "$SDKMAN" --install "ndk;26.1.10909125"
           echo "=== 已安装清单 ==="
-          sdkmanager --list_installed
+          "$SDKMAN" --list_installed
 
       - name: 安装 JS 依赖
         run: |
@@ -48,7 +80,10 @@ jobs:
           ls -d node_modules/@expo/cli node_modules/react-native node_modules/@react-native/gradle-plugin
 
       - name: 编译 APK
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
         run: |
+          set -e
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug \
@@ -62,10 +97,4 @@ jobs:
         with:
           name: MusicFree-蓝牙歌词版
           path: android/app/build/outputs/apk/debug/*.apk
-
-      - name: 失败时输出 Gradle 报告
-        if: failure()
-        run: |
-          echo "=== 查找 Gradle 报错 ==="
-          find android -name "*.html" -path "*reports*" 2>/dev/null | head
-          ls android/app/build/outputs/apk/debug/ 2>/dev/null || echo "没有产物"
+          if-no-files-found: warn
