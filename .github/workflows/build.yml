@@ -24,6 +24,26 @@ jobs:
           java-version: "17"
           distribution: "temurin"
 
+      # ★ 关键：补上仓库里没有的 keystore.properties
+      # android/app/build.gradle 第 143 行有 storeFile file(keystoreProperties['RELEASE_STORE_FILE'])
+      # 而 keystore.properties 被 .gitignore 忽略了，仓库里根本没有 —— 取出来是 null，
+      # project ':app' 配置阶段就会抛 "path may not be null or empty string. path='null'"
+      # 注意：这个 signingConfigs 是在【配置阶段】求值的，所以即使只编 Debug 也会踩到。
+      # 这里我们复用仓库自带的 android/app/debug.keystore（标准口令），只为让它非空。
+      - name: 补 keystore.properties
+        run: |
+          set -e
+          cat > android/keystore.properties << 'EOF'
+          RELEASE_STORE_FILE=debug.keystore
+          RELEASE_STORE_PASSWORD=android
+          RELEASE_KEY_ALIAS=androiddebugkey
+          RELEASE_KEY_PASSWORD=android
+          EOF
+          echo "--- 写入内容 ---"
+          cat android/keystore.properties
+          echo "--- 确认 debug.keystore 存在 ---"
+          ls -l android/app/debug.keystore
+
       # GitHub 的 ubuntu 镜像自带 Android SDK，这里只是把 sdkmanager 找出来并算出 SDK 根目录
       - name: 定位 sdkmanager
         id: sdk
@@ -78,10 +98,10 @@ jobs:
             || npm install --legacy-peer-deps
           ls -d node_modules/@expo/cli node_modules/react-native node_modules/@react-native/gradle-plugin
 
-      # 注意：这里不要再写 env: ANDROID_HOME，
-      # runner 自带的 ANDROID_HOME 会被空值覆盖掉，导致 Gradle 找不到 SDK。
       - name: 编译 APK
-        id: gradle
+        env:
+          ANDROID_HOME: ${{ steps.sdk.outputs.root }}
+          ANDROID_SDK_ROOT: ${{ steps.sdk.outputs.root }}
         run: |
           set -o pipefail
           cd android
