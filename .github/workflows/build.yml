@@ -24,14 +24,11 @@ jobs:
           java-version: "17"
           distribution: "temurin"
 
-      # 不依赖第三方 android-setup action：GitHub 的 ubuntu 镜像自带 Android SDK，
-      # 这里只是把 sdkmanager 的位置找出来并放到 PATH 上。
+      # GitHub 的 ubuntu 镜像自带 Android SDK，这里只是把 sdkmanager 找出来并算出 SDK 根目录
       - name: 定位 sdkmanager
         id: sdk
         run: |
           set -e
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
           SDKMAN=""
           for p in \
             "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
@@ -42,54 +39,73 @@ jobs:
             if [ -n "$p" ] && [ -x "$p" ]; then SDKMAN="$p"; break; fi
           done
           if [ -z "$SDKMAN" ]; then
-            echo "没找到现成的 sdkmanager，搜索一下"
             SDKMAN=$(find /usr/local/lib/android "$ANDROID_HOME" -name sdkmanager -type f 2>/dev/null | head -1)
           fi
           if [ -z "$SDKMAN" ]; then
-            echo "::error::找不到 sdkmanager，请查看日志里的 SDK 目录结构"
-            ls -R /usr/local/lib/android/sdk 2>/dev/null | head -40
+            echo "::error::找不到 sdkmanager"
+            ls -R /usr/local/lib/android 2>/dev/null | head -40
             exit 1
           fi
-          echo "使用: $SDKMAN"
+          # .../cmdline-tools/latest/bin/sdkmanager -> 往上 4 层就是 SDK 根目录
+          SDKROOT="$(dirname "$(dirname "$(dirname "$(dirname "$SDKMAN")")")")"
+          echo "sdkmanager: $SDKMAN"
+          echo "SDK 根目录: $SDKROOT"
           echo "path=$SDKMAN" >> $GITHUB_OUTPUT
+          echo "root=$SDKROOT" >> $GITHUB_OUTPUT
           echo "$(dirname "$SDKMAN")" >> $GITHUB_PATH
 
       - name: 安装 SDK 组件（platform 35 / build-tools 35 / NDK 26）
         run: |
           set -e
           SDKMAN="${{ steps.sdk.outputs.path }}"
-          echo "=== 接受许可 ==="
           yes | "$SDKMAN" --licenses > /dev/null 2>&1 || true
-          echo "=== 安装 platform-tools ==="
           "$SDKMAN" --install "platform-tools"
-          echo "=== 安装 platforms;android-35 ==="
           "$SDKMAN" --install "platforms;android-35"
-          echo "=== 安装 build-tools;35.0.0 ==="
           "$SDKMAN" --install "build-tools;35.0.0"
-          echo "=== 安装 ndk;26.1.10909125 ==="
           "$SDKMAN" --install "ndk;26.1.10909125"
-          echo "=== 已安装清单 ==="
           "$SDKMAN" --list_installed
+
+      - name: 写入 local.properties（显式告诉 Gradle SDK 在哪）
+        run: |
+          set -e
+          echo "sdk.dir=${{ steps.sdk.outputs.root }}" > android/local.properties
+          cat android/local.properties
 
       - name: 安装 JS 依赖
         run: |
           set -e
           npm ci --prefer-offline --no-audit --legacy-peer-deps \
             || npm install --legacy-peer-deps
-          echo "=== 校验关键依赖 ==="
           ls -d node_modules/@expo/cli node_modules/react-native node_modules/@react-native/gradle-plugin
 
+      # 注意：这里不要再写 env: ANDROID_HOME，
+      # runner 自带的 ANDROID_HOME 会被空值覆盖掉，导致 Gradle 找不到 SDK。
       - name: 编译 APK
-        env:
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+        id: gradle
         run: |
-          set -e
+          set -o pipefail
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug \
             --no-daemon \
             --stacktrace \
-            -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
+            -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m" \
+            2>&1 | tee gradle-build.log
+
+      - name: 抓取 Gradle 报错摘要
+        if: failure()
+        run: |
+          LOG=android/gradle-build.log
+          echo '## ❌ Gradle 报错摘要' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          if [ -f "$LOG" ]; then
+            awk '/What went wrong:/,0' "$LOG" | head -60 >> $GITHUB_STEP_SUMMARY
+            echo '--- 上下文 ---' >> $GITHUB_STEP_SUMMARY
+            grep -iE "error:|FAILED|Caused by|Exception" "$LOG" | head -40 >> $GITHUB_STEP_SUMMARY
+          else
+            echo "没有找到日志文件" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: 上传 APK
         if: always()
@@ -98,3 +114,11 @@ jobs:
           name: MusicFree-蓝牙歌词版
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: warn
+
+      - name: 上传 Gradle 完整日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-log
+          path: android/gradle-build.log
+          if-no-files-found: ignore
