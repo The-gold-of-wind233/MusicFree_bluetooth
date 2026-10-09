@@ -208,6 +208,22 @@ class BluetoothLyric {
         this.update(musicItem, lrc, translation);
     }
 
+    /**
+     * 只清掉本地缓存，不碰播放器元信息
+     * 用于「清空播放队列」这类场景：此时队列已被 reset，再推元信息没有意义，
+     * 但如果不清缓存，下一首歌的第一句若恰好和之前某句文本相同，
+     * 会被去重逻辑误判为「没变化」而跳过推送，导致车机上少显示一句。
+     */
+    clearCache() {
+        if (this.throttleTimer) {
+            clearTimeout(this.throttleTimer);
+            this.throttleTimer = null;
+        }
+        this.pendingTask = null;
+        this.lastText = null;
+        this.lastUpdateAt = 0;
+    }
+
     /** 还原元信息：把被歌词占用的字段改回歌曲本身的信息（关闭开关时调用） */
     async reset(musicItem?: IMusic.IMusicItem | null) {
         if (this.throttleTimer) {

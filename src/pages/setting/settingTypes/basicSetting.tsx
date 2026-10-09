@@ -686,6 +686,7 @@ function LyricSetting() {
     const widthPercent = useAppConfig("lyric.widthPercent");
     const fontSize = useAppConfig("lyric.fontSize");
     const enableAutoSearchLyric = useAppConfig("lyric.autoSearchLyric");
+    const enableAmllStyle = useAppConfig("lyric.amllStyle");
     const enableBluetoothLyric = useAppConfig("lyric.bluetoothLyric");
     const bluetoothLyricField = useAppConfig("lyric.bluetoothLyricField");
     const enableBluetoothLyricTranslation = useAppConfig(
@@ -702,6 +703,16 @@ function LyricSetting() {
         t("basicSettings.lyric.autoSearchLyric"),
         "lyric.autoSearchLyric",
         enableAutoSearchLyric ?? false,
+    );
+
+    /** AMLL 风格歌词：左对齐 + 当前行放大加粗 */
+    const amllStyle = createSwitch(
+        t("basicSettings.lyric.amllStyle"),
+        "lyric.amllStyle",
+        enableAmllStyle ?? false,
+        newValue => {
+            Config.setConfig("lyric.amllStyle", newValue);
+        },
     );
 
     const openStatusBarLyric = createSwitch(
@@ -826,6 +837,16 @@ function LyricSetting() {
                 onPress={autoSearchLyric.onPress}>
                 <ListItem.Content title={autoSearchLyric.title} />
                 {autoSearchLyric.right}
+            </ListItem>
+            <ListItem
+                withHorizontalPadding
+                heightType="small"
+                onPress={amllStyle.onPress}>
+                <ListItem.Content
+                    title={amllStyle.title}
+                    description={t("basicSettings.lyric.amllStyleDesc")}
+                />
+                {amllStyle.right}
             </ListItem>
             <ListItem
                 withHorizontalPadding

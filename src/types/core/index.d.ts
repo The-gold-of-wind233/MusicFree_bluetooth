@@ -338,8 +338,6 @@ export interface ILanguageData {
     "basicSettings.useCelluarNetworkDownload": string; // 使用移动网络下载
     
     "basicSettings.lyric": string; // 歌词
-    "basicSettings.lyric.amllStyle": string; // 歌词页 AMLL 风格
-    "basicSettings.lyric.amllStyleDesc": string; // AMLL 风格说明
     "basicSettings.lyric.autoSearchLyric": string; // 歌词缺失时自动搜索歌词
     "basicSettings.lyric.showStatusBarLyric": string; // 开启桌面歌词
     "basicSettings.lyric.align": string; // 对齐方式
