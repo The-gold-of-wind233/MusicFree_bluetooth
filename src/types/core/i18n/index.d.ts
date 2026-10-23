@@ -485,7 +485,9 @@ export interface ILanguageData {
     "panel.sheetSubscription.addedSongs": string; // 新增歌曲数
     "panel.sheetSubscription.upToDate": string; // 已是最新
     "panel.sheetSubscription.missingTitle": string; // 有歌曲不可见标题
-    "panel.sheetSubscription.missingContent": string; // 有歌曲不可见说明
+    "panel.sheetSubscription.missingContent": string;
+    "panel.sheetSubscription.removedTitle": string; // 已移除不可见歌曲
+    "panel.sheetSubscription.removedContent": string; // 已移除说明 // 有歌曲不可见说明
     "panel.sheetSubscription.syncNow": string; // 立即同步
     "panel.sheetSubscription.syncNowDesc": string; // 立即同步说明
     "panel.sheetSubscription.autoSync": string; // 自动同步

@@ -19,14 +19,40 @@ import { ReadDirItem, exists, readDir, unlink } from "react-native-fs";
 let localSheet: IMusic.IMusicItem[] = [];
 const localSheetStateMapper = new StateMapper(() => localSheet);
 
+/**
+ * 本地歌曲存在性校验的并发上限
+ *
+ * 完全并发会在本地歌曲很多时把文件系统的桥打满，反而更慢，
+ * 所以分批跑：每批 50 个并发，批内并行、批间串行。
+ */
+const EXIST_CHECK_BATCH_SIZE = 50;
+
+/** 判断某个音乐项的本地文件是否还在 */
+async function checkExists(musicItem: IMusic.IMusicItem) {
+    const localPath = getLocalPath(musicItem);
+    if (!localPath) {
+        return false;
+    }
+    try {
+        return await exists(localPath);
+    } catch {
+        // 权限异常、路径非法等都按「文件不存在」处理，不能让启动崩掉
+        return false;
+    }
+}
+
 export async function setup() {
     const sheet = await getStorage(StorageKeys.LocalMusicSheet);
     if (sheet) {
+        // 原来是逐个 await exists()，本地歌曲多时会明显拖慢启动
         let validSheet: IMusic.IMusicItem[] = [];
-        for (let musicItem of sheet) {
-            const localPath = getLocalPath(musicItem);
-            if (localPath && (await exists(localPath))) {
-                validSheet.push(musicItem);
+        for (let i = 0; i < sheet.length; i += EXIST_CHECK_BATCH_SIZE) {
+            const batch = sheet.slice(i, i + EXIST_CHECK_BATCH_SIZE);
+            const results = await Promise.all(batch.map(checkExists));
+            for (let j = 0; j < batch.length; ++j) {
+                if (results[j]) {
+                    validSheet.push(batch[j]);
+                }
             }
         }
         if (validSheet.length !== sheet.length) {

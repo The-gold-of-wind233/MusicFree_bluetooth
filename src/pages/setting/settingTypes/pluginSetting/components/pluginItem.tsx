@@ -159,15 +159,28 @@ function _PluginItem(props: IPluginItemProps) {
                         const result = await plugin.methods.importMusicSheet(
                             text,
                         );
-                        if (result && result.length > 0) {
+                        // 打上「同步来的」标记，同步时才能区分订阅项与手动添加的歌
+                        const syncedResult = (result ?? []).map(it => ({
+                            ...it,
+                            $sync: {
+                                fromSubscription: true as const,
+                                syncedAt: Date.now(),
+                            },
+                        }));
+                        if (syncedResult.length > 0) {
                             showDialog("SimpleDialog", {
                                 title: t("pluginSetting.pluginItem.options.importDialogTitle"),
                                 content: t("pluginSetting.pluginItem.options.importSheetDialogContent", {
-                                    count: result.length,
+                                    count: syncedResult.length,
                                 }),
                                 onOk() {
                                     showPanel("AddToMusicSheet", {
-                                        musicItem: result,
+                                        musicItem: syncedResult,
+                                        // 记住来源，之后才能一键同步（与首页导入入口行为一致）
+                                        subscription: {
+                                            url: text,
+                                            platform: plugin.name,
+                                        },
                                     });
                                 },
                             });

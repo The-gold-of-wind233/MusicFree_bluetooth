@@ -40,7 +40,9 @@ export default function CreateMusicSheet(props: ICreateMusicSheetProps) {
                             const sheetId = await MusicSheet.addSheet(
                                 input || defaultName,
                             );
-                            onSheetCreated?.(sheetId);
+                            // 必须 await：onSheetCreated 里会写入订阅信息，
+                            // 不等它完成就关面板，写入可能被打断
+                            await onSheetCreated?.(sheetId);
                             hidePanel();
                         }}
                     />

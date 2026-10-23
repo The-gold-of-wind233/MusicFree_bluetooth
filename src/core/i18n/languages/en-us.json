@@ -474,5 +474,7 @@
     "panel.sheetSubscription.unsubscribeConfirm": "This sheet will stop syncing. Downloaded songs are kept. Continue?",
     "panel.sheetSubscription.unsubscribed": "Unsubscribed",
     "panel.sheetSubscription.unsubscribeDesc": "Clears the source; songs are kept",
-    "panel.addToMusicSheet.toast.subscribed": "Source saved — you can sync this sheet anytime"
+    "panel.addToMusicSheet.toast.subscribed": "Source saved — you can sync this sheet anytime",
+    "panel.sheetSubscription.removedTitle": "Invisible songs removed",
+    "panel.sheetSubscription.removedContent": "{count} songs are no longer available and were removed locally in \"mirror\" mode. Manually added songs are kept."
 }

@@ -160,12 +160,21 @@ export default function SheetSubscription(props: ISheetSubscriptionProps) {
                                     );
                                 }
                                 if (missing > 0) {
+                                    // 两种模式处理方式不同，提示必须区分：
+                                    // mirror 已经真的删掉了，append 才谈得上「保留」
+                                    const isMirror =
+                                        (subscription?.syncMode ?? "append") ===
+                                        "mirror";
                                     showDialog("SimpleDialog", {
                                         title: t(
-                                            "panel.sheetSubscription.missingTitle",
+                                            isMirror
+                                                ? "panel.sheetSubscription.removedTitle"
+                                                : "panel.sheetSubscription.missingTitle",
                                         ),
                                         content: t(
-                                            "panel.sheetSubscription.missingContent",
+                                            isMirror
+                                                ? "panel.sheetSubscription.removedContent"
+                                                : "panel.sheetSubscription.missingContent",
                                             { count: missing },
                                         ),
                                     });

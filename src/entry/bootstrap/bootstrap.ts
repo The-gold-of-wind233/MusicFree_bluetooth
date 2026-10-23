@@ -213,13 +213,19 @@ async function extraMakeup() {
             if (Math.abs(now - lastUpdated) > 86400000) {
                 PersistStatus.set("app.pluginUpdateTime", now);
                 const plugins = PluginManager.getEnabledPlugins();
-                for (let i = 0; i < plugins.length; ++i) {
-                    const srcUrl = plugins[i].instance.srcUrl;
-                    if (srcUrl) {
-                        // 静默失败
-                        await PluginManager.installPluginFromUrl(srcUrl).catch(emptyFunction);
+                // 后台更新：原来是串行 await 每个插件的下载，插件一多启动就得一直等。
+                // 这里改成不阻塞启动流程，界面先出来，插件在后台慢慢更新。
+                // 仍然保持串行（避免并发下载把带宽打满），失败静默。
+                (async () => {
+                    for (let i = 0; i < plugins.length; ++i) {
+                        const srcUrl = plugins[i].instance.srcUrl;
+                        if (srcUrl) {
+                            await PluginManager.installPluginFromUrl(
+                                srcUrl,
+                            ).catch(emptyFunction);
+                        }
                     }
-                }
+                })().catch(emptyFunction);
             }
         }
     } catch { }

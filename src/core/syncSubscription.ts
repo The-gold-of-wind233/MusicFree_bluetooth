@@ -112,17 +112,24 @@ function dedupe(items: IMusic.IMusicItem[], primaryKeys: string[]) {
 async function patchSubscription(
     sheetId: string,
     patch: Partial<IMusic.ISubscription>,
-) {
+): Promise<boolean> {
     const sheet = MusicSheet.getSheetBase(sheetId);
     if (!sheet) {
-        return;
+        errorLog("订阅信息写入失败：找不到歌单", sheetId);
+        return false;
     }
-    await MusicSheet.updateMusicSheetBase(sheetId, {
-        subscription: {
-            ...(sheet.subscription as IMusic.ISubscription),
-            ...patch,
-        },
-    });
+    try {
+        await MusicSheet.updateMusicSheetBase(sheetId, {
+            subscription: {
+                ...(sheet.subscription as IMusic.ISubscription),
+                ...patch,
+            },
+        });
+        return true;
+    } catch (e) {
+        errorLog("订阅信息写入失败", e);
+        return false;
+    }
 }
 
 /** 从分享链接里尽力解析出源站歌单 id，用于比对是否换源 */
@@ -297,8 +304,8 @@ export async function subscribeSheet(
     sheetId: string,
     url: string,
     platform: string,
-) {
-    await patchSubscription(sheetId, {
+): Promise<boolean> {
+    return await patchSubscription(sheetId, {
         url,
         platform,
         sheetIdInSource: parseSheetIdInSource(url),

@@ -474,5 +474,7 @@
     "panel.sheetSubscription.unsubscribeConfirm": "解除後此歌單不再同步，已下載的歌曲會保留。確定嗎？",
     "panel.sheetSubscription.unsubscribed": "已解除訂閱",
     "panel.sheetSubscription.unsubscribeDesc": "清除來源資訊，歌曲保留",
-    "panel.addToMusicSheet.toast.subscribed": "已記住來源，可在歌單內隨時同步"
+    "panel.addToMusicSheet.toast.subscribed": "已記住來源，可在歌單內隨時同步",
+    "panel.sheetSubscription.removedTitle": "已移除不可見歌曲",
+    "panel.sheetSubscription.removedContent": "來源歌單中有 {count} 首歌已下架或不可見，已按「完全跟隨」模式從本機移除。手動新增的歌曲不受影響。"
 }

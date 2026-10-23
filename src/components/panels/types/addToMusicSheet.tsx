@@ -68,13 +68,16 @@ export default function AddToMusicSheet(props: IAddToMusicSheetProps) {
                                                         musicItem,
                                                     );
                                                     if (subscription) {
-                                                        await subscribeSheet(
-                                                            sheetId,
-                                                            subscription.url,
-                                                            subscription.platform,
-                                                        );
+                                                        const ok =
+                                                            await subscribeSheet(
+                                                                sheetId,
+                                                                subscription.url,
+                                                                subscription.platform,
+                                                            );
                                                         Toast.success(
-                                                            t("panel.addToMusicSheet.toast.subscribed"),
+                                                            ok
+                                                                ? t("panel.addToMusicSheet.toast.subscribed")
+                                                                : t("panel.addToMusicSheet.toast.success"),
                                                         );
                                                     } else {
                                                         Toast.success(
@@ -91,6 +94,8 @@ export default function AddToMusicSheet(props: IAddToMusicSheetProps) {
                                                 showPanel("AddToMusicSheet", {
                                                     musicItem: musicItem,
                                                     newSheetDefaultName,
+                                                    // 返回重选时别把来源弄丢了
+                                                    subscription,
                                                 });
                                             },
                                         });
@@ -111,8 +116,9 @@ export default function AddToMusicSheet(props: IAddToMusicSheetProps) {
                                                 sheet.id,
                                                 musicItem,
                                             );
+                                            let subscribed = false;
                                             if (subscription) {
-                                                await subscribeSheet(
+                                                subscribed = await subscribeSheet(
                                                     sheet.id,
                                                     subscription.url,
                                                     subscription.platform,
@@ -120,11 +126,10 @@ export default function AddToMusicSheet(props: IAddToMusicSheetProps) {
                                             }
                                             hidePanel();
                                             Toast.success(
-                                                subscription
+                                                subscribed
                                                     ? t("panel.addToMusicSheet.toast.subscribed")
                                                     : t("panel.addToMusicSheet.toast.success"),
                                             );
-                                            Toast.success(t("panel.addToMusicSheet.toast.success"));
                                         } catch {
                                             Toast.warn(t("panel.addToMusicSheet.toast.fail"));
                                         }
