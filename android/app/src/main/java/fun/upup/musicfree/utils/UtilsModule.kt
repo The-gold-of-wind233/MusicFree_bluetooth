@@ -7,6 +7,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.util.DisplayMetrics
 import android.view.WindowInsets
 import android.view.WindowManager
@@ -24,6 +26,33 @@ class UtilsModule(context: ReactApplicationContext) : ReactContextBaseJavaModule
     private val reactContext: ReactApplicationContext = context;
 
     override fun getName() = "NativeUtils"
+
+    /**
+     * 当前是否有蓝牙音频设备（车机 / 蓝牙耳机）连着
+     *
+     * 用途：蓝牙歌词是靠改写 MediaSession 元信息实现的，而手机下拉通知栏
+     * 读的是同一份数据，所以开着歌词时通知栏也会跟着变。
+     * 用它就能做到「只在连着蓝牙时才改元信息」，断开后自动还原，
+     * 日常用手机听歌时通知栏保持正常。
+     *
+     * 检测失败一律返回 false（保守：宁可不推送，也不要污染通知栏）。
+     */
+    @ReactMethod(isBlockingSynchronousMethod = true)
+    fun isBluetoothAudioConnected(): Boolean {
+        return try {
+            val audioManager =
+                reactApplicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                audioManager
+                    .getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+                    .any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP }
+            } else {
+                audioManager.isBluetoothA2dpOn
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
 
     @ReactMethod
     fun exitApp() {
