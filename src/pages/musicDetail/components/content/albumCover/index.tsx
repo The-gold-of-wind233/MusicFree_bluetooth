@@ -16,7 +16,6 @@ import Animated, {
     runOnJS,
     useAnimatedStyle,
     useSharedValue,
-    withSequence,
     withTiming,
 } from "react-native-reanimated";
 
@@ -124,15 +123,28 @@ export default function AlbumCover(props: IProps) {
                 // dx < 0 是左滑 → 下一首（direction = 1）
                 const direction = dx < 0 ? 1 : -1;
 
-                // 切歌放在这里立刻触发：封面加载是异步的，
-                // 等动画跑完再切反而会看到旧封面卡一下
-                runOnJS(switchSong)(direction);
-
-                // 旧封面滑出去 → 瞬间挪到另一侧 → 新封面滑进来
-                translateX.value = withSequence(
-                    withTiming(-direction * SLIDE_DISTANCE, { duration: 130 }),
-                    withTiming(direction * SLIDE_DISTANCE, { duration: 0 }),
-                    withTiming(0, { duration: 200 }),
+                /**
+                 * ⚠️ 顺序很关键：必须等「当前这首歌的封面」滑出屏幕之后再切歌。
+                 *
+                 * 如果像之前那样在这里立刻切歌，FastImage 的 source 会马上
+                 * 变成下一首，于是滑出去的那道残影就变成了新歌封面 ——
+                 * 而它应该是当前这首歌的封面。
+                 *
+                 * 所以：当前封面滑出 →（此时已在屏幕外）切歌 → 新封面从另一侧滑入。
+                 */
+                translateX.value = withTiming(
+                    -direction * SLIDE_DISTANCE,
+                    { duration: 130 },
+                    finished => {
+                        if (!finished) {
+                            return;
+                        }
+                        // 此刻封面在屏幕外，切换不会被看到
+                        runOnJS(switchSong)(direction);
+                        // 新封面挪到另一侧，再滑进来
+                        translateX.value = direction * SLIDE_DISTANCE;
+                        translateX.value = withTiming(0, { duration: 200 });
+                    },
                 );
             } else {
                 // 距离不够，回弹
