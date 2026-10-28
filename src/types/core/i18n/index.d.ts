@@ -338,7 +338,9 @@ export interface ILanguageData {
     "basicSettings.useCelluarNetworkDownload": string; // 使用移动网络下载
     
     "basicSettings.lyric": string; // 歌词
-    "basicSettings.lyric.autoSearchLyric": string; // 歌词缺失时自动搜索歌词
+    "basicSettings.lyric.autoSearchLyric": string;
+    "basicSettings.lyric.swipeToSwitch": string; // 歌词页左右滑切歌
+    "basicSettings.lyric.swipeToSwitchDesc": string; // 说明 // 歌词缺失时自动搜索歌词
     "basicSettings.lyric.showStatusBarLyric": string; // 开启桌面歌词
     "basicSettings.lyric.hideStatusBarLyricWhenPaused": string; // 暂停时隐藏桌面歌词
     "basicSettings.lyric.hideStatusBarLyricWhenPausedDesc": string; // 说明

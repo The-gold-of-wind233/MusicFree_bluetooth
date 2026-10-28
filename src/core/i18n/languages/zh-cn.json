@@ -476,5 +476,7 @@
     "panel.sheetSubscription.unsubscribeDesc": "清除来源信息，歌曲保留",
     "panel.addToMusicSheet.toast.subscribed": "已记住来源，可在歌单内随时同步",
     "panel.sheetSubscription.removedTitle": "已移除不可见歌曲",
-    "panel.sheetSubscription.removedContent": "源歌单中有 {count} 首歌已下架或不可见，已按「完全跟随」模式从本地移除。手动添加的歌曲不受影响。"
+    "panel.sheetSubscription.removedContent": "源歌单中有 {count} 首歌已下架或不可见，已按「完全跟随」模式从本地移除。手动添加的歌曲不受影响。",
+    "basicSettings.lyric.swipeToSwitch": "歌词页左右滑切歌",
+    "basicSettings.lyric.swipeToSwitchDesc": "左滑下一首，右滑上一首"
 }

@@ -19,9 +19,14 @@ import { IconButtonWithGesture } from "@/components/base/iconButton.tsx";
 import { getMediaExtraProperty } from "@/utils/mediaExtra";
 import lyricManager, { useCurrentLyricItem, useLyricState } from "@/core/lyricManager";
 import { useI18N } from "@/core/i18n";
-import { useAppConfig } from "@/core/appConfig";
+import Config from "@/core/appConfig";
 
 const ITEM_HEIGHT = rpx(92);
+
+/** 左右滑切歌：触发所需的最小水平位移 */
+const SWIPE_THRESHOLD = 60;
+/** 左右滑切歌：允许的垂直偏移上限，超过就判定为在滚歌词，不切歌 */
+const SWIPE_MAX_Y = 40;
 
 interface IItemHeights {
     blankHeight?: number;
@@ -50,7 +55,6 @@ export default function Lyric(props: IProps) {
         false,
     );
     const fontSizeKey = PersistStatus.useValue("lyric.detailFontSize", 1);
-    const amllStyle = useAppConfig("lyric.amllStyle");
     const fontSizeStyle = useMemo(
         () => ({
             fontSize: fontSizeMap[fontSizeKey!],
@@ -62,6 +66,8 @@ export default function Lyric(props: IProps) {
         useDelayFalsy<number | undefined>(undefined, 2000);
     const musicState = useMusicState();
     const { t } = useI18N();
+    // 歌词页左右滑切歌，默认开启
+    const swipeToSwitch = Config.getConfig("basic.lyricSwipeToSwitch") ?? true;
 
     const [layout, setLayout] = useState<LayoutRectangle>();
 
@@ -216,6 +222,35 @@ export default function Lyric(props: IProps) {
         })
         .runOnJS(true);
 
+    /**
+     * 左右滑切歌：左滑下一首、右滑上一首
+     *
+     * 两个关键约束：
+     * - failOffsetY：垂直方向移动超过阈值就放弃，把事件让给歌词列表的滚动
+     * - activeOffsetX：水平位移到阈值才算激活，避免误触
+     * 再配合 Race 与点击翻页手势竞争，谁先满足条件谁生效。
+     */
+    const swipeGesture = Gesture.Pan()
+        .enabled(swipeToSwitch)
+        .activeOffsetX([-SWIPE_THRESHOLD, SWIPE_THRESHOLD])
+        .failOffsetY([-SWIPE_MAX_Y, SWIPE_MAX_Y])
+        .runOnJS(true)
+        .onEnd(evt => {
+            // 正在拖拽定位进度时不响应，避免和竖向操作打架
+            if (dragShownRef.current || draggingIndex !== undefined) {
+                return;
+            }
+            const dx = evt.translationX;
+            if (Math.abs(dx) < SWIPE_THRESHOLD) {
+                return;
+            }
+            if (dx < 0) {
+                TrackPlayer.skipToNext();
+            } else {
+                TrackPlayer.skipToPrevious();
+            }
+        });
+
     const unlinkTapGesture = Gesture.Tap()
         .onStart(() => {
             if (currentMusicItem) {
@@ -226,7 +261,7 @@ export default function Lyric(props: IProps) {
 
     return (
         <>
-            <GestureDetector gesture={tapGesture}>
+            <GestureDetector gesture={Gesture.Race(swipeGesture, tapGesture)}>
                 <View style={globalStyle.fwflex1}>
                     {loading ? (
                         <Loading color="white" />
@@ -314,7 +349,6 @@ export default function Lyric(props: IProps) {
                                         highlight={
                                             currentLrcItem?.index === index
                                         }
-                                        amll={amllStyle ?? false}
                                     />
                                 );
                             }}

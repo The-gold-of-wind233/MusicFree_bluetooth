@@ -22,6 +22,8 @@ export interface IAppConfigProperties {
     "basic.defaultDownloadQuality": IMusic.IQualityKey;
     "basic.downloadQualityOrder": "asc" | "desc";
     "basic.musicDetailDefault": "album" | "lyric";
+    /** 歌词页左右滑动切歌：左滑下一首、右滑上一首 */
+    "basic.lyricSwipeToSwitch": boolean;
     "basic.musicDetailAwake": boolean;
     "basic.maxHistoryLen": number;
     "basic.autoUpdatePlugin": boolean;

@@ -690,6 +690,9 @@ function LyricSetting() {
         "lyric.hideStatusBarLyricWhenPaused",
     );
     const enableBluetoothLyric = useAppConfig("lyric.bluetoothLyric");
+    const enableLyricSwipeToSwitch = useAppConfig(
+        "basic.lyricSwipeToSwitch",
+    );
     const bluetoothLyricField = useAppConfig("lyric.bluetoothLyricField");
     const enableBluetoothLyricTranslation = useAppConfig(
         "lyric.bluetoothLyricTranslation",
@@ -790,6 +793,16 @@ function LyricSetting() {
         },
     );
 
+    /** 歌词页左右滑切歌 */
+    const lyricSwipeToSwitch = createSwitch(
+        t("basicSettings.lyric.swipeToSwitch"),
+        "basic.lyricSwipeToSwitch",
+        enableLyricSwipeToSwitch ?? true,
+        newValue => {
+            Config.setConfig("basic.lyricSwipeToSwitch", newValue);
+        },
+    );
+
     const bluetoothLyricFieldRadio = createRadio(
         t("basicSettings.lyric.bluetoothLyricField"),
         "lyric.bluetoothLyricField",
@@ -842,6 +855,16 @@ function LyricSetting() {
 
     return (
         <View>
+            <ListItem
+                withHorizontalPadding
+                heightType="small"
+                onPress={lyricSwipeToSwitch.onPress}>
+                <ListItem.Content
+                    title={lyricSwipeToSwitch.title}
+                    description={t("basicSettings.lyric.swipeToSwitchDesc")}
+                />
+                {lyricSwipeToSwitch.right}
+            </ListItem>
             <ListItem
                 withHorizontalPadding
                 heightType="small"
