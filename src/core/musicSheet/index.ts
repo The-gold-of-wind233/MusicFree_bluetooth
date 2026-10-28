@@ -421,6 +421,13 @@ class MusicSheetClazz implements IInjectable {
         // Update
         const musicSheets = getDefaultStore().get(musicSheetsBaseAtom);
 
+        /**
+         * 原本这里算好了 patchData（含 worksNum、且带 file:// 封面保护），
+         * 但下面 updateMusicSheetBase 只传了 coverImg：
+         *   1) worksNum 没写回 → 首页歌单显示的歌曲数不刷新
+         *   2) coverImg 无条件覆盖 → 用户自定义的本地封面（file://）会被首歌封面顶掉
+         * 现在直接把 patchData 传下去，两个问题一起修掉。
+         */
         let patchData: Partial<IMusic.IMusicSheetItemBase> = {};
         if (
             !musicSheets
@@ -430,9 +437,7 @@ class MusicSheetClazz implements IInjectable {
             patchData.coverImg = musicList.at(0)?.artwork;
         }
         patchData.worksNum = musicList.length;
-        await this.updateMusicSheetBase(sheetId, {
-            coverImg: musicList.at(0)?.artwork,
-        });
+        await this.updateMusicSheetBase(sheetId, patchData);
 
         await storage.setMusicList(sheetId, musicList.musicList);
         ee.emit("UpdateMusicList", {
