@@ -161,6 +161,51 @@ class LyricManager implements IInjectable {
         await this.syncStatusBarLyricWithPlaybackState(state);
     }
 
+    /**
+     * 按当前状态决定桌面歌词「显示还是不显示」，用于刚打开总开关的场景
+     *
+     * 不能直接调 showStatusBarLyric 再靠 sync 去收起来：先 show 会闪一下
+     * 「MusicFree」，再收起观感很差（测试项 22 就是这个现象）。
+     * 所以这里先判断，确认该显示才真正拉起。
+     */
+    async applyStatusBarLyricVisibility() {
+        if (!this.appConfig.getConfig("lyric.showStatusBarLyric")) {
+            return;
+        }
+        let state: State | undefined;
+        try {
+            const playbackState: any = await RNTrackPlayer.getPlaybackState();
+            state = playbackState?.state;
+        } catch (e) {
+            errorLog("获取播放状态失败", e);
+        }
+        // 「还没播过歌」（Stopped / None）不算暂停：这时应该显示占位文本，
+        // 否则用户打开开关后会以为没生效
+        const idle =
+            state === undefined ||
+            state === State.Stopped ||
+            state === State.None;
+        const paused = !idle && state !== State.Playing;
+        const hideWhenPaused = this.appConfig.getConfig(
+            "lyric.hideStatusBarLyricWhenPaused",
+        );
+
+        if (hideWhenPaused && paused) {
+            // 暂停中：压根不要拉起，避免闪现
+            if (!this.statusBarLyricHidden) {
+                try {
+                    await LyricUtil.hideStatusBarLyric();
+                } catch (e) {
+                    errorLog("隐藏桌面歌词失败", e);
+                }
+                this.statusBarLyricHidden = true;
+            }
+            return;
+        }
+
+        this.showStatusBarLyric("MusicFree");
+    }
+
     setup() {
         // 更新歌词
         this.trackPlayer.on(TrackPlayerEvents.CurrentMusicChanged, (musicItem) => {

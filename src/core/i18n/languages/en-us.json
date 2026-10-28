@@ -478,5 +478,9 @@
     "panel.sheetSubscription.removedTitle": "Invisible songs removed",
     "panel.sheetSubscription.removedContent": "{count} songs are no longer available and were removed locally in \"mirror\" mode. Manually added songs are kept.",
     "basicSettings.lyric.swipeToSwitch": "Swipe to switch songs",
-    "basicSettings.lyric.swipeToSwitchDesc": "Swipe left for next, right for previous"
+    "basicSettings.lyric.swipeToSwitchDesc": "Swipe left for next, right for previous (both cover and lyric page)",
+    "basicSettings.lyric.bluetoothLyricTrigger": "When to apply",
+    "basicSettings.lyric.bluetoothLyricTriggerDesc": "Car display and the phone notification share the same song info. With \"Bluetooth only\", the notification stays untouched when no Bluetooth device is connected",
+    "basicSettings.lyric.bluetoothLyricTrigger.auto": "Only when Bluetooth connected (recommended)",
+    "basicSettings.lyric.bluetoothLyricTrigger.always": "Always"
 }

@@ -690,6 +690,7 @@ function LyricSetting() {
         "lyric.hideStatusBarLyricWhenPaused",
     );
     const enableBluetoothLyric = useAppConfig("lyric.bluetoothLyric");
+    const triggerValue = useAppConfig("lyric.bluetoothLyricTrigger");
     const enableLyricSwipeToSwitch = useAppConfig(
         "basic.lyricSwipeToSwitch",
     );
@@ -721,22 +722,10 @@ function LyricSetting() {
                         await LyricUtil.checkSystemAlertPermission();
 
                     if (hasPermission) {
-                        const statusBarLyricConfig = {
-                            topPercent: Config.getConfig("lyric.topPercent"),
-                            leftPercent: Config.getConfig("lyric.leftPercent"),
-                            align: Config.getConfig("lyric.align"),
-                            color: Config.getConfig("lyric.color"),
-                            backgroundColor: Config.getConfig("lyric.backgroundColor"),
-                            widthPercent: Config.getConfig("lyric.widthPercent"),
-                            fontSize: Config.getConfig("lyric.fontSize"),
-                        };
-                        LyricUtil.showStatusBarLyric(
-                            "MusicFree",
-                            statusBarLyricConfig ?? {}
-                        );
                         Config.setConfig("lyric.showStatusBarLyric", true);
-                        // 如果此刻是暂停状态、且开了「暂停隐藏」，刚拉起的窗口要再收起来
-                        lyricManager.refreshStatusBarLyricVisibility();
+                        // 不要在这里直接 show：暂停状态下会先闪一下「MusicFree」再收起。
+                        // 交给 lyricManager 判断，确认该显示才拉起。
+                        await lyricManager.applyStatusBarLyricVisibility();
                     } else {
                         LyricUtil.requestSystemAlertPermission().finally(() => {
                             Toast.warn(t("toast.noFloatWindowPermission"));
@@ -818,6 +807,26 @@ function LyricSetting() {
         },
         () => {
             // 换个字段试试，看自己车机上到底哪个位置能显示出歌词
+            pushBluetoothLyricNow();
+        },
+    );
+
+    /**
+     * 生效条件：默认只在连着蓝牙时才改写元信息。
+     * 车机和手机通知栏读的是同一份数据，不连蓝牙就别动它。
+     */
+    const bluetoothLyricTrigger = createRadio(
+        t("basicSettings.lyric.bluetoothLyricTrigger"),
+        "lyric.bluetoothLyricTrigger",
+        ["auto", "always"],
+        triggerValue ?? "auto",
+        {
+            auto: t("basicSettings.lyric.bluetoothLyricTrigger.auto"),
+            always: t("basicSettings.lyric.bluetoothLyricTrigger.always"),
+        },
+        () => {
+            // 切条件后立刻按新条件刷一次：
+            // 切到 auto 且当前没连蓝牙时，会顺带把元信息还原
             pushBluetoothLyricNow();
         },
     );
@@ -913,6 +922,18 @@ function LyricSetting() {
                             title={bluetoothLyricFieldRadio.title}
                         />
                         {bluetoothLyricFieldRadio.right}
+                    </ListItem>
+                    <ListItem
+                        withHorizontalPadding
+                        heightType="small"
+                        onPress={bluetoothLyricTrigger.onPress}>
+                        <ListItem.Content
+                            title={bluetoothLyricTrigger.title}
+                            description={t(
+                                "basicSettings.lyric.bluetoothLyricTriggerDesc",
+                            )}
+                        />
+                        {bluetoothLyricTrigger.right}
                     </ListItem>
                     <ListItem
                         withHorizontalPadding

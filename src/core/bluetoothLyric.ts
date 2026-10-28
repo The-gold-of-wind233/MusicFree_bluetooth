@@ -1,6 +1,7 @@
 import Config from "@/core/appConfig";
 import { errorLog } from "@/utils/log";
 import RNTrackPlayer from "react-native-track-player";
+import { isBluetoothAudioConnected } from "@/utils/bluetoothAudio";
 
 /**
  * 蓝牙歌词（车机歌词）
@@ -41,6 +42,8 @@ const CURRENT_TRACK_INDEX = 0;
 const MIN_UPDATE_INTERVAL = 600;
 /** 单行最长字符数，车机屏幕通常放不下太长的句子 */
 const MAX_TEXT_LENGTH = 80;
+/** 蓝牙连接状态缓存时长：避免每句歌词都过一次原生桥 */
+const BT_CHECK_CACHE_MS = 3000;
 
 type Metadata = {
     title: string;
@@ -64,10 +67,38 @@ class BluetoothLyric {
     /** 推送期间收到的最新任务 */
     private pendingTask: IPendingTask | null = null;
     private throttleTimer: ReturnType<typeof setTimeout> | null = null;
+    /** 蓝牙连接状态缓存 */
+    private btConnected = false;
+    private btCheckedAt = 0;
+    /** 元信息是否已被歌词改写（用于蓝牙断开后还原） */
+    private hasPushed = false;
 
     /** 开关是否打开 */
     get enabled() {
         return !!Config.getConfig("lyric.bluetoothLyric");
+    }
+
+    /**
+     * 当前是否应该改写元信息
+     *
+     * 背景：车机和手机下拉通知栏读的是同一份 MediaSession 元信息，
+     * 所以开着蓝牙歌词时通知栏也会跟着变成歌词。用「仅在蓝牙音频设备
+     * 连接时才改写」来规避：不连蓝牙就完全不碰元信息，通知栏保持正常。
+     *
+     * 注意：连着蓝牙时通知栏仍会显示歌词，这是安卓的架构限制，无解。
+     */
+    private shouldPush(): boolean {
+        const trigger =
+            Config.getConfig("lyric.bluetoothLyricTrigger") ?? "auto";
+        if (trigger === "always") {
+            return true;
+        }
+        const now = Date.now();
+        if (now - this.btCheckedAt > BT_CHECK_CACHE_MS) {
+            this.btConnected = isBluetoothAudioConnected();
+            this.btCheckedAt = now;
+        }
+        return this.btConnected;
     }
 
     /** 歌词写进哪个字段 */
@@ -163,6 +194,12 @@ class BluetoothLyric {
         if (!this.enabled) {
             return;
         }
+        // 未按触发条件（比如没连蓝牙）时，若之前改写过就还原，
+        // 保证通知栏不会一直挂着歌词
+        if (!this.shouldPush()) {
+            this.restoreIfNeeded(musicItem);
+            return;
+        }
 
         const lyricText = this.normalize(lrc, translation);
         // 没有歌词时退回显示歌曲本身的信息，至少车机上不会一直停在上句歌词
@@ -224,6 +261,14 @@ class BluetoothLyric {
         this.lastUpdateAt = 0;
     }
 
+    /** 只在之前改写过时才还原，避免无意义的元信息写入 */
+    private restoreIfNeeded(musicItem?: IMusic.IMusicItem | null) {
+        if (!this.hasPushed) {
+            return;
+        }
+        this.reset(musicItem);
+    }
+
     /** 还原元信息：把被歌词占用的字段改回歌曲本身的信息（关闭开关时调用） */
     async reset(musicItem?: IMusic.IMusicItem | null) {
         if (this.throttleTimer) {
@@ -232,6 +277,7 @@ class BluetoothLyric {
         }
         this.pendingTask = null;
         this.lastText = null;
+        this.hasPushed = false;
         await this.send(this.buildBaseMetadata(musicItem), musicItem, null, true);
     }
 
@@ -275,6 +321,10 @@ class BluetoothLyric {
 
             this.lastText = text;
             this.lastUpdateAt = Date.now();
+            // null 表示这是还原操作，不算改写过
+            if (text !== null) {
+                this.hasPushed = true;
+            }
         } catch (e) {
             errorLog("蓝牙歌词更新失败", e);
         } finally {

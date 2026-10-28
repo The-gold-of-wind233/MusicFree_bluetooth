@@ -23,8 +23,8 @@ import Config from "@/core/appConfig";
 
 const ITEM_HEIGHT = rpx(92);
 
-/** 左右滑切歌：触发所需的最小水平位移 */
-const SWIPE_THRESHOLD = 60;
+/** 左右滑切歌：触发所需的最小水平位移（按屏幕宽度换算，约 35dp） */
+const SWIPE_THRESHOLD = rpx(72);
 /** 左右滑切歌：允许的垂直偏移上限，超过就判定为在滚歌词，不切歌 */
 const SWIPE_MAX_Y = 40;
 

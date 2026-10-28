@@ -477,6 +477,10 @@
     "panel.addToMusicSheet.toast.subscribed": "已记住来源，可在歌单内随时同步",
     "panel.sheetSubscription.removedTitle": "已移除不可见歌曲",
     "panel.sheetSubscription.removedContent": "源歌单中有 {count} 首歌已下架或不可见，已按「完全跟随」模式从本地移除。手动添加的歌曲不受影响。",
-    "basicSettings.lyric.swipeToSwitch": "歌词页左右滑切歌",
-    "basicSettings.lyric.swipeToSwitchDesc": "左滑下一首，右滑上一首"
+    "basicSettings.lyric.swipeToSwitch": "播放页左右滑切歌",
+    "basicSettings.lyric.swipeToSwitchDesc": "左滑下一首，右滑上一首（封面页与歌词页均可）",
+    "basicSettings.lyric.bluetoothLyricTrigger": "生效条件",
+    "basicSettings.lyric.bluetoothLyricTriggerDesc": "车机和手机通知栏读的是同一份歌曲信息。选「仅蓝牙连接时」，不连蓝牙就不会改动通知栏",
+    "basicSettings.lyric.bluetoothLyricTrigger.auto": "仅蓝牙连接时（推荐）",
+    "basicSettings.lyric.bluetoothLyricTrigger.always": "始终"
 }

@@ -357,7 +357,11 @@ export interface ILanguageData {
     "basicSettings.lyric.bluetoothLyric": string; // 开启蓝牙歌词（车机显示）
     "basicSettings.lyric.bluetoothLyricDesc": string; // 蓝牙歌词的说明
     "basicSettings.lyric.bluetoothLyricField": string; // 车机显示位置
-    "basicSettings.lyric.bluetoothLyricField.split": string; // 歌词+歌名分开显示
+    "basicSettings.lyric.bluetoothLyricField.split": string;
+        "basicSettings.lyric.bluetoothLyricTrigger": string;
+        "basicSettings.lyric.bluetoothLyricTriggerDesc": string;
+        "basicSettings.lyric.bluetoothLyricTrigger.auto": string;
+        "basicSettings.lyric.bluetoothLyricTrigger.always": string; // 歌词+歌名分开显示
     "basicSettings.lyric.bluetoothLyricField.title": string; // 歌曲名位置
     "basicSettings.lyric.bluetoothLyricField.titleAppend": string; // 接在歌曲名后面
     "basicSettings.lyric.bluetoothLyricField.artist": string; // 歌手位置

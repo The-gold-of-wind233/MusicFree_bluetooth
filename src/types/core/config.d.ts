@@ -50,6 +50,8 @@ export interface IAppConfigProperties {
     // 蓝牙歌词（车机歌词）：把歌词写进元信息字段，通过蓝牙 AVRCP 推给车机
     /** 是否开启蓝牙歌词 */
     "lyric.bluetoothLyric": boolean;
+    /** 蓝牙歌词何时生效：auto = 仅蓝牙音频设备连接时；always = 始终 */
+    "lyric.bluetoothLyricTrigger": "auto" | "always";
     /** 歌词写进哪个元信息字段，各家车机显示的位置不一样 */
     "lyric.bluetoothLyricField": "split" | "title" | "titleAppend" | "artist";
     /** 蓝牙歌词是否附带翻译 */
