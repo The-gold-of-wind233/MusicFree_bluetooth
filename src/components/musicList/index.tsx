@@ -11,6 +11,13 @@ import { isSameMediaItem } from "@/utils/mediaUtils";
 import Icon from "../base/icon";
 import { iconSizeConst } from "@/constants/uiConst";
 import useColors from "@/hooks/useColors";
+import { SortType } from "@/constants/commonConst";
+import ThemeText from "../base/themeText";
+import {
+    buildIndexItems,
+    IIndexItem,
+    sampleIndexItems,
+} from "@/utils/indexKey";
 
 interface IMusicListProps {
     /** 顶部 */
@@ -32,6 +39,19 @@ interface IMusicListProps {
     highlightMusicItem?: IMusic.IMusicItem | null;
     onRetry?: () => void;
     onLoadMore?: () => void;
+    /**
+     * 当前排序方式。
+     * 只有按名称排序（标题 / 歌手 / 专辑）时才会出现 A-Z 索引条，
+     * 其它排序（时间、未排序）下顺序没有字母规律，索引条没有意义。
+     * 不传则不显示。
+     */
+    sortType?: SortType;
+    /**
+     * 长按某一项的回调。
+     * MusicItem 本来就有 onItemLongPress，但之前没人传，
+     * 所以长按实际什么都不做。这里把口子开出来。
+     */
+    onItemLongPress?: (musicItem: IMusic.IMusicItem) => void;
 }
 const ITEM_HEIGHT = rpx(120);
 
@@ -47,6 +67,8 @@ export default function MusicList(props: IMusicListProps) {
         onRetry,
         onLoadMore,
         highlightMusicItem,
+        sortType,
+        onItemLongPress,
     } = props;    
     const colors = useColors();
     const flashListRef = useRef<FlashList<IMusic.IMusicItem>>(null);
@@ -59,6 +81,40 @@ export default function MusicList(props: IMusicListProps) {
         return musicList.findIndex(item => isSameMediaItem(item, highlightMusicItem));
     }, [highlightMusicItem, musicList]);    
     
+    /**
+     * 索引条数据：只在按名称排序时才有值
+     */
+    const indexItems = React.useMemo<IIndexItem[]>(() => {
+        if (!sortType || !musicList?.length) {
+            return [];
+        }
+        // 只有这三种是按名称排序的，其余（时间 / 未排序）不出索引条
+        let field: "title" | "artist" | "album";
+        if (sortType === SortType.Title) {
+            field = "title";
+        } else if (sortType === SortType.Artist) {
+            field = "artist";
+        } else if (sortType === SortType.Album) {
+            field = "album";
+        } else {
+            return [];
+        }
+        return sampleIndexItems(buildIndexItems(musicList, field));
+    }, [musicList, sortType]);
+
+    /** 点击索引条：跳到该字母的第一首 */
+    const scrollToIndexItem = useCallback((item: IIndexItem) => {
+        try {
+            flashListRef.current?.scrollToIndex({
+                index: item.index,
+                animated: false,
+                viewPosition: 0,
+            });
+        } catch {
+            // 下标越界等情况直接忽略，不影响使用
+        }
+    }, []);
+
     // 处理滚动开始
     const handleScrollBegin = useCallback(() => {
         if (highlightIndex !== -1) {
@@ -135,6 +191,11 @@ export default function MusicList(props: IMusicListProps) {
                                     );
                                 }
                             }}
+                            onItemLongPress={
+                                onItemLongPress
+                                    ? () => onItemLongPress(musicItem)
+                                    : undefined
+                            }
                             musicSheet={musicSheet}
                             highlight={isSameMediaItem(musicItem, highlightMusicItem)}
                         />
@@ -147,6 +208,20 @@ export default function MusicList(props: IMusicListProps) {
                 }}
                 onEndReachedThreshold={0.1}
             />              
+            {indexItems.length > 1 ? (
+                <View style={styles.indexBar} pointerEvents="box-none">
+                    {indexItems.map(item => (
+                        <Pressable
+                            key={`${item.key}-${item.index}`}
+                            style={styles.indexItem}
+                            onPress={() => scrollToIndexItem(item)}>
+                            <ThemeText fontSize="description" fontColor="textSecondary">
+                                {item.key}
+                            </ThemeText>
+                        </Pressable>
+                    ))}
+                </View>
+            ) : null}
             {showBadge && (
                 <View style={styles.badge} pointerEvents="box-none">
                     <Pressable
@@ -174,6 +249,22 @@ const styles = StyleSheet.create({
         bottom: rpx(80),
         right: rpx(84),
         zIndex: 1000,
+    },
+    indexBar: {
+        position: "absolute",
+        right: 0,
+        top: 0,
+        bottom: 0,
+        width: rpx(48),
+        justifyContent: "center",
+        alignItems: "center",
+        zIndex: 900,
+    },
+    indexItem: {
+        width: rpx(48),
+        paddingVertical: rpx(2),
+        alignItems: "center",
+        justifyContent: "center",
     },
     badgeButton: {
         width: rpx(64),

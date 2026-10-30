@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import rpx from "@/utils/rpx";
 import ThemeText from "@/components/base/themeText";
@@ -6,6 +6,7 @@ import { ImgAsset } from "@/constants/assetsConst";
 import FastImage from "@/components/base/fastImage";
 import PlayAllBar from "@/components/base/playAllBar";
 import useColors from "@/hooks/useColors";
+import { calcSheetDuration, formatDuration } from "@/utils/sheetStats";
 
 interface IHeaderProps {
     musicSheet: IMusic.IMusicSheetItem | null;
@@ -17,6 +18,11 @@ export default function Header(props: IHeaderProps) {
     const colors = useColors();
 
     const [maxLines, setMaxLines] = useState<number | undefined>(6);
+    // 歌单总时长；没有时长数据时为 undefined，此时不显示
+    const totalDuration = useMemo(
+        () => calcSheetDuration(musicList),
+        [musicList],
+    );
 
     const toggleShowMore = () => {
         if (maxLines) {
@@ -47,6 +53,13 @@ export default function Header(props: IHeaderProps) {
                                 (musicList ? musicList.length ?? 0 : "-")}
                             首{" "}
                         </ThemeText>
+                        {totalDuration !== undefined ? (
+                            <ThemeText
+                                fontColor="textSecondary"
+                                fontSize="description">
+                                {`总时长 ${formatDuration(totalDuration)}`}
+                            </ThemeText>
+                        ) : null}
                     </View>
                 </View>
                 {musicSheet?.description ? (

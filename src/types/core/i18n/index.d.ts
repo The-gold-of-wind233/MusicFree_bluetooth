@@ -340,6 +340,8 @@ export interface ILanguageData {
     "basicSettings.lyric": string; // 歌词
     "basicSettings.lyric.autoSearchLyric": string;
     "basicSettings.lyric.swipeToSwitch": string; // 歌词页左右滑切歌
+    "basicSettings.volumeFadeOnSwitch": string;
+    "basicSettings.volumeFadeOnSwitchDesc": string;
     "basicSettings.lyric.swipeToSwitchDesc": string; // 说明 // 歌词缺失时自动搜索歌词
     "basicSettings.lyric.showStatusBarLyric": string; // 开启桌面歌词
     "basicSettings.lyric.hideStatusBarLyricWhenPaused": string; // 暂停时隐藏桌面歌词
@@ -474,6 +476,8 @@ export interface ILanguageData {
     "panel.createMusicSheet.inputLabel": string; // 输入框
     "panel.importMusicSheet.title": string; // 导入歌单
     "panel.sheetSubscription.title": string; // 歌单订阅
+    "panel.sheetSubscription.remoteCount": string;
+    "panel.sheetSubscription.mirrorNoAutoDelete": string;
     "panel.sheetSubscription.notSyncable": string; // 该歌单不可同步
     "panel.sheetSubscription.notSyncableDesc": string; // 不可同步说明
     "panel.sheetSubscription.neverSync": string; // 从未同步

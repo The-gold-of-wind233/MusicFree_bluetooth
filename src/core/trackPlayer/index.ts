@@ -68,6 +68,8 @@ class TrackPlayer extends EventEmitter<{
     private serviceInited = false;
     // 播放队列索引map
     private playListIndexMap = createMediaIndexMap([] as IMusic.IMusicItem[]);
+    /** 是否正在做切歌淡入淡出，防止连点时定时器打架 */
+    private fading = false;
 
 
     private static maxMusicQueueLength = 10000;
@@ -652,7 +654,9 @@ class TrackPlayer extends EventEmitter<{
             return;
         }
 
-        await this.play(this.getPlayListMusicAt(this.currentIndex + 1), true);
+        await this.switchWithVolumeFade(() =>
+            this.play(this.getPlayListMusicAt(this.currentIndex + 1), true),
+        );
     }
 
     async skipToPrevious(): Promise<void> {
@@ -661,10 +665,77 @@ class TrackPlayer extends EventEmitter<{
             return;
         }
 
-        await this.play(
-            this.getPlayListMusicAt(this.currentIndex === -1 ? 0 : this.currentIndex - 1),
-            true,
+        await this.switchWithVolumeFade(() =>
+            this.play(
+                this.getPlayListMusicAt(
+                    this.currentIndex === -1 ? 0 : this.currentIndex - 1,
+                ),
+                true,
+            ),
         );
+    }
+
+    /**
+     * 切歌时做一次音量淡出 → 淡入，避免新歌突然以全音量响起来
+     * （开车时两首歌音量差异大，冷不丁一下会吓一跳）
+     *
+     * 设计上刻意保守：
+     * - 默认关闭，需要用户在设置里打开
+     * - 全程只在切歌这一瞬间生效，结束后一定恢复到原音量（finally 兜底）
+     * - 任何一步报错都不阻断切歌本身
+     */
+    private async switchWithVolumeFade(action: () => Promise<void>) {
+        if (this.fading) {
+            // 已经在淡入淡出中，直接切，避免定时器打架
+            await action();
+            return;
+        }
+        const enabled = this.configService.getConfig(
+            "basic.volumeFadeOnSwitch",
+        );
+        if (!enabled) {
+            await action();
+            return;
+        }
+
+        const target =
+            (await ReactNativeTrackPlayer.getVolume().catch(() => null)) ?? 1;
+        if (target <= 0) {
+            // 本来就是静音，没必要淡
+            await action();
+            return;
+        }
+
+        this.fading = true;
+        const STEP = 40;
+        const FADE_OUT = 120;
+        const FADE_IN = 260;
+        try {
+            // 淡出
+            let volume = target;
+            while (volume > 0.02) {
+                volume = Math.max(0, volume - (target * STEP) / FADE_OUT);
+                await ReactNativeTrackPlayer.setVolume(volume).catch(() => {});
+                await delay(STEP);
+            }
+            await ReactNativeTrackPlayer.setVolume(0).catch(() => {});
+
+            await action();
+
+            // 淡入：新歌从静音渐渐升回原音量
+            volume = 0;
+            while (volume < target - 0.02) {
+                volume = Math.min(target, volume + (target * STEP) / FADE_IN);
+                await ReactNativeTrackPlayer.setVolume(volume).catch(() => {});
+                await delay(STEP);
+            }
+        } catch (e) {
+            errorLog("切歌淡入淡出失败", e);
+        } finally {
+            // 无论如何都要把音量还回去，否则会卡在静音
+            await ReactNativeTrackPlayer.setVolume(target).catch(() => {});
+            this.fading = false;
+        }
     }
 
     async changeQuality(newQuality: IMusic.IQualityKey): Promise<boolean> {

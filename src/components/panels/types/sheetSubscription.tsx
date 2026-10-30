@@ -126,7 +126,16 @@ export default function SheetSubscription(props: ISheetSubscriptionProps) {
                                 title={t("panel.sheetSubscription.lastSync")}
                                 description={
                                     statusText
-                                        ? `${lastSyncText} · ${statusText}`
+                                        ? `${lastSyncText} · ${statusText}${
+                                              subscription?.remoteCount
+                                                  ? ` · ${t(
+                                                        "panel.sheetSubscription.remoteCount",
+                                                        {
+                                                            count: subscription.remoteCount,
+                                                        },
+                                                    )}`
+                                                  : ""
+                                          }`
                                         : lastSyncText
                                 }
                             />
@@ -244,12 +253,19 @@ export default function SheetSubscription(props: ISheetSubscriptionProps) {
                             }}>
                             <ListItem.Content
                                 title={t("panel.sheetSubscription.syncMode")}
-                                description={t(
+                                description={`${t(
                                     (subscription?.syncMode ?? "append") ===
                                         "mirror"
                                         ? "panel.sheetSubscription.syncMode.mirror"
                                         : "panel.sheetSubscription.syncMode.append",
-                                )}
+                                )}${
+                                    (subscription?.syncMode ?? "append") ===
+                                    "mirror"
+                                        ? ` · ${t(
+                                              "panel.sheetSubscription.mirrorNoAutoDelete",
+                                          )}`
+                                        : ""
+                                }`}
                             />
                         </ListItem>
 

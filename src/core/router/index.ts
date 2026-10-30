@@ -80,6 +80,8 @@ interface RouterParams extends RouterParamsBase {
     "music-list-editor": {
         musicSheet?: Partial<IMusic.IMusicSheetItem>;
         musicList: IMusic.IMusicItem[] | null;
+        /** 长按进入时，预先勾选的那一首（省得进去再找） */
+        initCheckedItem?: IMusic.IMusicItem | null;
     };
     "file-selector": {
         fileType?: "folder" | "file" | "file-and-folder"; // 10: folder 11: file and folder,

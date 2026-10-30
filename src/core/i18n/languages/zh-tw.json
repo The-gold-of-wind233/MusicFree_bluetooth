@@ -482,5 +482,9 @@
     "basicSettings.lyric.bluetoothLyricTrigger": "生效條件",
     "basicSettings.lyric.bluetoothLyricTriggerDesc": "車機和手機通知欄讀的是同一份歌曲資訊。選「僅藍牙連線時」，不連藍牙就不會改動通知欄",
     "basicSettings.lyric.bluetoothLyricTrigger.auto": "僅藍牙連線時（推薦）",
-    "basicSettings.lyric.bluetoothLyricTrigger.always": "始終"
+    "basicSettings.lyric.bluetoothLyricTrigger.always": "始終",
+    "basicSettings.volumeFadeOnSwitch": "切歌音量淡入淡出",
+    "basicSettings.volumeFadeOnSwitchDesc": "切歌時音量先漸弱再漸強，避免新歌突然以全音量響起來",
+    "panel.sheetSubscription.remoteCount": "來源 {count} 首",
+    "panel.sheetSubscription.mirrorNoAutoDelete": "自動同步只追加，刪除僅在手動同步時執行"
 }

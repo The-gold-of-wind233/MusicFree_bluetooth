@@ -24,6 +24,8 @@ declare namespace IMusic {
         addedCount?: number;
         /** 上次同步发现源端已下架的条数 */
         missingCount?: number;
+    /** 上次同步时源端的歌曲数，用于判断拉取是否完整 */
+    remoteCount?: number;
     }
 
     export interface IMusicSheetItemBase {

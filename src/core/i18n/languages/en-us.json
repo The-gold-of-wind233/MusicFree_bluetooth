@@ -482,5 +482,9 @@
     "basicSettings.lyric.bluetoothLyricTrigger": "When to apply",
     "basicSettings.lyric.bluetoothLyricTriggerDesc": "Car display and the phone notification share the same song info. With \"Bluetooth only\", the notification stays untouched when no Bluetooth device is connected",
     "basicSettings.lyric.bluetoothLyricTrigger.auto": "Only when Bluetooth connected (recommended)",
-    "basicSettings.lyric.bluetoothLyricTrigger.always": "Always"
+    "basicSettings.lyric.bluetoothLyricTrigger.always": "Always",
+    "basicSettings.volumeFadeOnSwitch": "Fade volume when switching",
+    "basicSettings.volumeFadeOnSwitchDesc": "Fade out then fade in on track change, so the next song never blasts at full volume",
+    "panel.sheetSubscription.remoteCount": "{count} songs in source",
+    "panel.sheetSubscription.mirrorNoAutoDelete": "Auto sync only adds; removal happens on manual sync"
 }

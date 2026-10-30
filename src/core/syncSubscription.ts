@@ -23,6 +23,26 @@ export interface ISyncResult {
     /** 源端已消失的歌曲（带 $sync 标记的那部分） */
     missing: IMusic.IMusicItem[];
     error?: string;
+    /** 本次实际采用的源端歌曲数（mirror 模式下取两次拉取的较大值） */
+    remoteCount?: number;
+    /** 真正被移除的数量 */
+    removedCount?: number;
+    /**
+     * 是否因为「自动同步」而跳过了删除。
+     * 后台同步无人值守，只追加不删除，避免用户无感知丢歌。
+     */
+    deleteSkipped?: boolean;
+}
+
+/**
+ * 同步选项
+ */
+export interface ISyncOptions {
+    /**
+     * 是否允许从歌单移除歌曲，默认 true。
+     * 自动同步（后台触发）应传 false：没人盯着的时候不做删除。
+     */
+    allowDelete?: boolean;
 }
 
 /** 自动同步的周期：距上次同步超过这个时长才触发 */
@@ -145,8 +165,12 @@ function parseSheetIdInSource(url: string): string | undefined {
 /**
  * 同步单个歌单
  * @param sheetId 本地歌单 id
+ * @param options 同步选项，详见 ISyncOptions
  */
-export async function syncSheet(sheetId: string): Promise<ISyncResult> {
+export async function syncSheet(
+    sheetId: string,
+    options: ISyncOptions = {},
+): Promise<ISyncResult> {
     const fail = (error: string): ISyncResult => ({
         sheetId,
         status: "failed",
@@ -173,21 +197,49 @@ export async function syncSheet(sheetId: string): Promise<ISyncResult> {
     }
 
     // 2. 拉取远端；失败最多重试一次
-    let remoteList: IMusic.IMusicItem[] = [];
     let lastError: string = "未知错误";
-    for (let attempt = 0; attempt <= MAX_RETRY; attempt++) {
-        try {
-            remoteList = (await plugin.methods?.importMusicSheet?.(
-                subscription.url,
-            )) ?? [];
-            if (remoteList.length > 0) {
-                lastError = "";
-                break;
+
+    /** 拉一次远端歌单；完全失败时返回空数组 */
+    const fetchRemote = async (): Promise<IMusic.IMusicItem[]> => {
+        for (let attempt = 0; attempt <= MAX_RETRY; attempt++) {
+            try {
+                const list =
+                    (await plugin.methods?.importMusicSheet?.(
+                        subscription.url,
+                    )) ?? [];
+                if (list.length > 0) {
+                    lastError = "";
+                    return list;
+                }
+                lastError = "未拉取到歌曲";
+            } catch (e: any) {
+                lastError = e?.message || "拉取失败";
+                errorLog("同步歌单失败", e);
             }
-            lastError = "未拉取到歌曲";
-        } catch (e: any) {
-            lastError = e?.message || "拉取失败";
-            errorLog("同步歌单失败", e);
+        }
+        return [];
+    };
+
+    const isMirror = subscription.syncMode === "mirror";
+    // 默认允许删除；自动同步会显式传 false
+    const allowDelete = options.allowDelete !== false;
+
+    let remoteList = await fetchRemote();
+
+    /**
+     * 完全跟随模式会删歌，所以必须确保拿到的源端列表是完整的。
+     *
+     * 插件偶尔会只返回一部分（分页、限流、网络抖动），
+     * 这时「本次没返回的歌」会被误判成「源端已删除」而删掉 ——
+     * 表现就是：同步后歌单变少，再同步一次那些歌又回来了（且排到最前面）。
+     *
+     * 所以 mirror 模式多拉一次，取数量较多的一份。
+     * 只追加模式不需要：少拉几首顶多是这次没加全，下次补上，不会丢数据。
+     */
+    if (isMirror && remoteList.length > 0) {
+        const secondTry = await fetchRemote();
+        if (secondTry.length > remoteList.length) {
+            remoteList = secondTry;
         }
     }
 
@@ -214,6 +266,7 @@ export async function syncSheet(sheetId: string): Promise<ISyncResult> {
         status: "success",
         added: toAddUnique,
         missing,
+        remoteCount: remoteList.length,
     };
 
     try {
@@ -231,12 +284,16 @@ export async function syncSheet(sheetId: string): Promise<ISyncResult> {
         }
 
         const mirror = subscription.syncMode === "mirror";
-        if (mirror && missing.length) {
-            await MusicSheet.removeMusic(sheetId, missing);
-            result.status = "partial";
-        } else if (missing.length) {
-            // append 模式下只提示，不删除
-            result.status = "partial";
+        if (missing.length) {
+            if (mirror && allowDelete) {
+                await MusicSheet.removeMusic(sheetId, missing);
+                result.removedCount = missing.length;
+                result.status = "partial";
+            } else {
+                // append 模式，或自动同步（后台无人值守）——只提示，不删除
+                result.deleteSkipped = mirror;
+                result.status = "partial";
+            }
         }
 
         await patchSubscription(sheetId, {
@@ -245,6 +302,7 @@ export async function syncSheet(sheetId: string): Promise<ISyncResult> {
             lastSyncError: undefined,
             addedCount: toAddUnique.length,
             missingCount: missing.length,
+            remoteCount: remoteList.length,
             sheetIdInSource: parseSheetIdInSource(subscription.url),
         });
     } catch (e: any) {
@@ -286,7 +344,11 @@ export async function syncAll(autoOnly = false): Promise<ISyncResult[]> {
         // 串行执行，避免并发打爆插件接口
         const results: ISyncResult[] = [];
         for (const sheet of targets) {
-            results.push(await syncSheet(sheet.id));
+            // 自动同步是后台行为，用户不在旁边看着：
+            // 只追加新歌，绝不删除，避免无感知丢歌（删除交给手动同步）
+            results.push(
+                await syncSheet(sheet.id, { allowDelete: !autoOnly }),
+            );
         }
         return results;
     } finally {

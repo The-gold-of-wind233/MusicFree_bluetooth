@@ -691,6 +691,7 @@ function LyricSetting() {
     );
     const enableBluetoothLyric = useAppConfig("lyric.bluetoothLyric");
     const triggerValue = useAppConfig("lyric.bluetoothLyricTrigger");
+    const volumeFadeOnSwitch = useAppConfig("basic.volumeFadeOnSwitch");
     const enableLyricSwipeToSwitch = useAppConfig(
         "basic.lyricSwipeToSwitch",
     );
@@ -780,6 +781,13 @@ function LyricSetting() {
                 await bluetoothLyric.reset(TrackPlayer.currentMusic);
             }
         },
+    );
+
+    /** 切歌时的音量淡入淡出 */
+    const volumeFadeSwitch = createSwitch(
+        t("basicSettings.volumeFadeOnSwitch"),
+        "basic.volumeFadeOnSwitch",
+        volumeFadeOnSwitch ?? false,
     );
 
     /** 歌词页左右滑切歌 */
@@ -873,6 +881,16 @@ function LyricSetting() {
                     description={t("basicSettings.lyric.swipeToSwitchDesc")}
                 />
                 {lyricSwipeToSwitch.right}
+            </ListItem>
+            <ListItem
+                withHorizontalPadding
+                heightType="small"
+                onPress={volumeFadeSwitch.onPress}>
+                <ListItem.Content
+                    title={volumeFadeSwitch.title}
+                    description={t("basicSettings.volumeFadeOnSwitchDesc")}
+                />
+                {volumeFadeSwitch.right}
             </ListItem>
             <ListItem
                 withHorizontalPadding
