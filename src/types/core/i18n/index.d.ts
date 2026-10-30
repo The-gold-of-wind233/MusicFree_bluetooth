@@ -125,6 +125,7 @@ export interface ILanguageData {
 
     // 搜索页面相关
     "searchPage.searchPlaceHolder": string; // 搜索
+    "searchPage.suggestTitle": string;
     "searchPage.searchLabel.a11y": string; // 搜索标签
     "searchPage.history": string; // 历史记录
     "searchPage.artistResultWorksNum": string; // 艺术家作品数量
@@ -135,6 +136,8 @@ export interface ILanguageData {
 
     // 歌单详情相关
     "sheetDetail.totalMusicCount": string; // 歌曲总数
+    "sheetDetail.totalDuration": string;
+    "sheetDetail.totalDurationPartial": string;
     "sheetDetail.editSheetInfo": string; // 编辑歌单信息
     "sheetDetail.syncSubscription": string; // 订阅与同步
     "sheetDetail.batchEditMusic": string; // 批量编辑音乐
@@ -340,8 +343,6 @@ export interface ILanguageData {
     "basicSettings.lyric": string; // 歌词
     "basicSettings.lyric.autoSearchLyric": string;
     "basicSettings.lyric.swipeToSwitch": string; // 歌词页左右滑切歌
-    "basicSettings.volumeFadeOnSwitch": string;
-    "basicSettings.volumeFadeOnSwitchDesc": string;
     "basicSettings.lyric.swipeToSwitchDesc": string; // 说明 // 歌词缺失时自动搜索歌词
     "basicSettings.lyric.showStatusBarLyric": string; // 开启桌面歌词
     "basicSettings.lyric.hideStatusBarLyricWhenPaused": string; // 暂停时隐藏桌面歌词

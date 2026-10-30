@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
 import { StyleSheet, View } from "react-native";
 import NavBar from "./components/navBar";
-import { useAtom, useSetAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
     PageStatus,
     initSearchResults,
@@ -10,6 +10,7 @@ import {
     searchResultsAtom,
 } from "./store/atoms";
 import HistoryPanel from "./components/historyPanel";
+import SuggestPanel from "./components/suggestPanel";
 import ResultPanel from "./components/resultPanel";
 import MusicBar from "@/components/musicBar";
 import Loading from "@/components/base/loading";
@@ -20,6 +21,7 @@ import { useI18N } from "@/core/i18n";
 
 export default function () {
     const [pageStatus, setPageStatus] = useAtom(pageStatusAtom);
+    const query = useAtomValue(queryAtom);
     const setQuery = useSetAtom(queryAtom);
     const setSearchResultsState = useSetAtom(searchResultsAtom);
     const { t } = useI18N();
@@ -38,7 +40,8 @@ export default function () {
             <NavBar />
             <SafeAreaView edges={["left", "right"]} style={style.wrapper}>
                 <View style={style.flex1}>
-                    {pageStatus === PageStatus.EDITING && <HistoryPanel />}
+                    {pageStatus === PageStatus.EDITING &&
+                        (query.trim() ? <SuggestPanel /> : <HistoryPanel />)}
                     {pageStatus === PageStatus.SEARCHING && <Loading />}
                     {pageStatus === PageStatus.RESULT && <ResultPanel />}
                     {pageStatus === PageStatus.NO_PLUGIN && (

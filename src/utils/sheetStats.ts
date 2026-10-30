@@ -4,6 +4,15 @@
  * 只要总时长，歌手数 / 专辑数不做（用户明确说没必要）。
  */
 
+export interface IDurationInfo {
+    /** 已知时长的歌曲数 */
+    knownCount: number;
+    /** 歌单总歌曲数 */
+    totalCount: number;
+    /** 已知部分的时长总和（秒） */
+    total: number;
+}
+
 /** 把秒数格式化成「x小时y分」/「y分」/「z秒」 */
 export function formatDuration(seconds: number): string {
     if (!seconds || seconds < 0) {
@@ -23,17 +32,17 @@ export function formatDuration(seconds: number): string {
 }
 
 /**
- * 累加歌单里所有歌曲的时长（秒）
+ * 统计歌单总时长
  *
  * 返回 undefined 表示「一首都没有时长信息」——
- * 很多在线歌曲在没播放过之前不带 duration，这时显示「0秒」会误导，
- * 所以宁可不显示。
+ * 很多在线歌曲在未播放过之前不带 duration，这时显示「0秒」会误导，
+ * 所以宁可整行不显示。
  *
  * 只接受 0~3600 秒之间的值，避免脏数据把总和拉爆。
  */
 export function calcSheetDuration(
     musicList?: IMusic.IMusicItem[] | null,
-): number | undefined {
+): IDurationInfo | undefined {
     if (!musicList || !musicList.length) {
         return undefined;
     }
@@ -46,5 +55,12 @@ export function calcSheetDuration(
             ++count;
         }
     }
-    return count > 0 ? sum : undefined;
+    if (count === 0) {
+        return undefined;
+    }
+    return {
+        knownCount: count,
+        totalCount: musicList.length,
+        total: sum,
+    };
 }

@@ -5,13 +5,14 @@ import { ResumeMode, SortType, localPluginPlatform } from "@/constants/commonCon
 import { IAppConfig } from "@/types/core/config";
 import { IInjectable } from "@/types/infra";
 import { isSameMediaItem } from "@/utils/mediaUtils";
+import { errorLog } from "@/utils/log";
 import EventEmitter from "eventemitter3";
 import { Immer } from "immer";
 import { atom, getDefaultStore, useAtomValue } from "jotai";
 import { nanoid } from "nanoid";
 import { useEffect, useMemo, useState } from "react";
 import migrate, { migrateV2 } from "./migrate.ts";
-import SortedMusicList from "./sortedMusicList.ts";
+import SortedMusicList, { SORT_VERSION } from "./sortedMusicList.ts";
 import storage from "./storage.ts";
 
 const produce = new Immer({
@@ -96,10 +97,24 @@ class MusicSheetClazz implements IInjectable {
                 const sortType = storage.getSheetMeta(sheet.id, "sort") as SortType;
                 sheet.worksNum = musicList.length;
                 migrateV2.migrate(sheet.id, musicList);
-                musicListMap.set(
-                    sheet.id,
-                    new SortedMusicList(musicList, sortType, true),
-                );
+                const sortedList = new SortedMusicList(musicList, sortType, true);
+                /**
+                 * 排序规则升级过（改成拼音字母块 + 英文优先）的话，
+                 * 旧的排序结果要重排一次并写回存储 ——
+                 * 否则列表顺序和 A-Z 索引条对不上，点索引条会跳错。
+                 */
+                if (sortType && sortType !== SortType.None) {
+                    const storedVersion = storage.getSheetMeta(
+                        sheet.id,
+                        "sortVersion",
+                    );
+                    if (storedVersion !== SORT_VERSION) {
+                        sortedList.forceResort();
+                        storage.setMusicList(sheet.id, sortedList.musicList);
+                        storage.setSheetMeta(sheet.id, "sortVersion", SORT_VERSION);
+                    }
+                }
+                musicListMap.set(sheet.id, sortedList);
                 sheet.worksNum = musicList.length;
                 ee.emit("UpdateMusicList", {
                     sheetId: sheet.id,
@@ -128,6 +143,68 @@ class MusicSheetClazz implements IInjectable {
         }
 
 
+    }
+
+    /**
+     * 已回填过时长歌曲的 key，避免同一首歌反复写存储
+     */
+    private durationBackfilled = new Set<string>();
+
+    /**
+     * 播放时把真实时长回填到歌单里
+     *
+     * 很多在线歌曲在未播放之前不带 duration 字段，导致歌单总时长算不出来。
+     * 播过一遍之后 RNTP 会给出真实时长，这里把它写回歌单，
+     * 于是「总时长」会随着听歌逐渐变准。
+     *
+     * - 一首歌只回填一次
+     * - 本来就有时长的直接跳过
+     * - 找不到这首歌（比如在播放列表里但不在任何歌单）就什么都不做
+     */
+    async backfillDuration(
+        musicItem: IMusic.IMusicItem | null | undefined,
+        duration: number,
+    ) {
+        if (!musicItem || !(duration > 0) || duration >= 3600) {
+            return;
+        }
+        const key = `${musicItem.platform ?? ""}::${musicItem.id ?? ""}`;
+        if (!key || this.durationBackfilled.has(key)) {
+            return;
+        }
+        const existing = musicItem.duration;
+        if (typeof existing === "number" && existing > 0) {
+            // 本来就有，不用回填
+            this.durationBackfilled.add(key);
+            return;
+        }
+        this.durationBackfilled.add(key);
+
+        try {
+            const sheets = getDefaultStore().get(musicSheetsBaseAtom);
+            for (const sheet of sheets) {
+                const list = this.getSortedMusicListBySheetId(sheet.id);
+                const arr = list.musicList;
+                let hit = -1;
+                for (let i = 0; i < arr.length; ++i) {
+                    if (isSameMediaItem(arr[i], musicItem)) {
+                        hit = i;
+                        break;
+                    }
+                }
+                if (hit === -1 || typeof arr[hit].duration === "number") {
+                    continue;
+                }
+                arr[hit] = { ...arr[hit], duration };
+                await storage.setMusicList(sheet.id, arr);
+                ee.emit("UpdateMusicList", {
+                    sheetId: sheet.id,
+                    updateType: "length",
+                });
+            }
+        } catch (e) {
+            errorLog("回填歌曲时长失败", e);
+        }
     }
 
     /** 取歌单的基本信息（不含歌曲列表） */
@@ -424,8 +501,8 @@ class MusicSheetClazz implements IInjectable {
         /**
          * 原本这里算好了 patchData（含 worksNum、且带 file:// 封面保护），
          * 但下面 updateMusicSheetBase 只传了 coverImg：
-         *   1) worksNum 没写回 → 首页歌单显示的歌曲数不刷新
-         *   2) coverImg 无条件覆盖 → 用户自定义的本地封面（file://）会被首歌封面顶掉
+         *   1. worksNum 没写回 → 首页歌单显示的歌曲数不刷新
+         *   2. coverImg 无条件覆盖 → 用户自定义的本地封面（file://）会被首歌封面顶掉
          * 现在直接把 patchData 传下去，两个问题一起修掉。
          */
         let patchData: Partial<IMusic.IMusicSheetItemBase> = {};
@@ -454,6 +531,7 @@ class MusicSheetClazz implements IInjectable {
         // update
         await storage.setMusicList(sheetId, musicList.musicList);
         storage.setSheetMeta(sheetId, "sort", sortType);
+        storage.setSheetMeta(sheetId, "sortVersion", SORT_VERSION);
         ee.emit("UpdateMusicList", {
             sheetId,
             updateType: "resort",

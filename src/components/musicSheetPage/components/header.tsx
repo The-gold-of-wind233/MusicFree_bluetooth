@@ -6,6 +6,7 @@ import { ImgAsset } from "@/constants/assetsConst";
 import FastImage from "@/components/base/fastImage";
 import PlayAllBar from "@/components/base/playAllBar";
 import useColors from "@/hooks/useColors";
+import { useI18N } from "@/core/i18n";
 import { calcSheetDuration, formatDuration } from "@/utils/sheetStats";
 
 interface IHeaderProps {
@@ -16,10 +17,11 @@ interface IHeaderProps {
 export default function Header(props: IHeaderProps) {
     const { musicSheet, musicList, canStar } = props;
     const colors = useColors();
+    const { t } = useI18N();
 
     const [maxLines, setMaxLines] = useState<number | undefined>(6);
     // 歌单总时长；没有时长数据时为 undefined，此时不显示
-    const totalDuration = useMemo(
+    const durationInfo = useMemo(
         () => calcSheetDuration(musicList),
         [musicList],
     );
@@ -53,11 +55,23 @@ export default function Header(props: IHeaderProps) {
                                 (musicList ? musicList.length ?? 0 : "-")}
                             首{" "}
                         </ThemeText>
-                        {totalDuration !== undefined ? (
+                        {durationInfo ? (
                             <ThemeText
                                 fontColor="textSecondary"
                                 fontSize="description">
-                                {`总时长 ${formatDuration(totalDuration)}`}
+                                {durationInfo.knownCount ===
+                                durationInfo.totalCount
+                                    ? t("sheetDetail.totalDuration", {
+                                          duration: formatDuration(
+                                              durationInfo.total,
+                                          ),
+                                      })
+                                    : t("sheetDetail.totalDurationPartial", {
+                                          duration: formatDuration(
+                                              durationInfo.total,
+                                          ),
+                                          count: durationInfo.knownCount,
+                                      })}
                             </ThemeText>
                         ) : null}
                     </View>

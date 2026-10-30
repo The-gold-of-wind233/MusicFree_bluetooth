@@ -7,14 +7,24 @@ import { useSheetItem } from "@/core/musicSheet";
 import { useParams } from "@/core/router";
 import useColors from "@/hooks/useColors";
 import rpx from "@/utils/rpx";
-import React from "react";
+import React, { useMemo } from "react";
 import { StyleSheet, View } from "react-native";
+import { calcSheetDuration, formatDuration } from "@/utils/sheetStats";
 
 export default function Header() {
     const { id = "favorite" } = useParams<"local-sheet-detail">();
     const sheet = useSheetItem(id);
     const colors = useColors();
     const { t } = useI18N();
+    /**
+     * 歌单总时长。
+     * 很多在线歌曲在没播放过之前不带 duration 字段，
+     * 所以这里是「已知 N 首的时长」，播过的歌会自动补上（见下方回填逻辑）。
+     */
+    const durationInfo = useMemo(
+        () => calcSheetDuration(sheet?.musicList),
+        [sheet?.musicList],
+    );
 
     return (
         <View style={{ backgroundColor: colors.card }}>
@@ -33,6 +43,24 @@ export default function Header() {
                             count: sheet?.musicList?.length ?? 0,
                         })}
                     </ThemeText>
+                    {durationInfo ? (
+                        <ThemeText
+                            fontColor="textSecondary"
+                            fontSize="description">
+                            {durationInfo.knownCount === durationInfo.totalCount
+                                ? t("sheetDetail.totalDuration", {
+                                      duration: formatDuration(
+                                          durationInfo.total,
+                                      ),
+                                  })
+                                : t("sheetDetail.totalDurationPartial", {
+                                      duration: formatDuration(
+                                          durationInfo.total,
+                                      ),
+                                      count: durationInfo.knownCount,
+                                  })}
+                        </ThemeText>
+                    ) : null}
                 </View>
             </View>
             <PlayAllBar musicList={sheet?.musicList} musicSheet={sheet} />

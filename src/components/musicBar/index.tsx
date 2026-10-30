@@ -11,6 +11,34 @@ import TrackPlayer, { useCurrentMusic, useMusicState, useProgress } from "@/core
 import { musicIsPaused } from "@/utils/trackUtils";
 import MusicInfo from "./musicInfo";
 import Icon from "@/components/base/icon.tsx";
+import MusicSheet from "@/core/musicSheet";
+
+/**
+ * 播放时把真实时长回填到歌单里（只做一次）
+ *
+ * 很多在线歌曲在未播放之前不带 duration 字段，歌单总时长因此算不出来。
+ * 播过之后 RNTP 会给出真实时长，这里写回歌单，
+ * 于是「总时长」会随着听歌逐渐变准。
+ *
+ * 放在音乐栏是因为它常年显示在前台（后台 service 里的 jotai store 是空的，
+ * 在那里回填不会生效，所以不能用 service 的进度事件）。
+ */
+function useBackfillDuration() {
+    const progress = useProgress();
+    const currentMusic = useCurrentMusic();
+
+    useEffect(() => {
+        const duration = progress?.duration;
+        if (duration && duration > 0 && currentMusic) {
+            MusicSheet.backfillDuration(currentMusic, duration);
+        }
+    }, [progress?.duration, currentMusic]);
+}
+
+function MusicBarInner() {
+    useBackfillDuration();
+    return null;
+}
 
 function CircularPlayBtn() {
     const progress = useProgress();
@@ -79,6 +107,9 @@ function MusicBar() {
 
     return (
         <>
+            {/* 独立于 memo：MusicBar 被 memo 成永不重渲染，
+                这个子组件自己订阅进度，才能持续回填时长 */}
+            <MusicBarInner />
             {musicItem && !showKeyboard && (
                 <View
                     style={[

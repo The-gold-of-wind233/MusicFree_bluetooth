@@ -1,36 +1,27 @@
+import { OTHER_LETTER, getSortKey } from "./pinyin";
+
 /**
  * 列表 A-Z 索引条的分组工具
  *
- * 排序用的是 Intl.Collator("zh")，中文按拼音排。
- * 但纯 JS 拿不到汉字拼音（要引第三方库、体积不小），
- * 所以索引标签直接用「排序后的实际首字符」：
- *   - 拉丁字母 / 数字 → 该字符（字母转大写）
- *   - 汉字 → 该汉字本身
- *   - 其它符号 → "#"
- * 这样标签顺序与列表顺序天然一致，跳转一定准确。
+ * 标签统一用 A-Z（汉字取拼音首字母），数字 / 符号 / 其它文字归到「#」，
+ * 「#」排在 Z 后面。
+ *
+ * 注意：这里**不重新排序**，只是顺着当前列表（已排好序）扫描，
+ * 所以结果顺序和屏幕上的顺序天然一致，跳转一定准确。
+ * 排序规则见 sortedMusicList.ts —— 两者用的是同一个 getIndexKey。
  */
 
-/** 取某个字符串用于索引分组的标签 */
+/** 「#」的标签：数字 / 符号 / 其它文字，排在 Z 之后 */
+export const INDEX_SHARP = OTHER_LETTER;
+
+/**
+ * 取某个字符串用于索引分组的标签
+ *
+ * 直接复用排序用的 getSortKey，**保证索引条与列表顺序完全一致**
+ * （各标签内部顺序由排序保证，这里只关心标签本身）。
+ */
 export function getIndexKey(raw?: string | null): string {
-    const text = (raw ?? "").trim();
-    if (!text) {
-        return "#";
-    }
-    const first = text[0];
-    // 拉丁字母
-    if (/[a-zA-Z]/.test(first)) {
-        return first.toUpperCase();
-    }
-    // 数字
-    if (/[0-9]/.test(first)) {
-        return first;
-    }
-    // 汉字（含 CJK 扩展区）
-    if (/[\u4e00-\u9fff\u3400-\u4dbf]/.test(first)) {
-        return first;
-    }
-    // 其它：日文、韩文、符号等，统一归到 #
-    return "#";
+    return getSortKey(raw).letter;
 }
 
 export interface IIndexItem {
@@ -40,11 +31,17 @@ export interface IIndexItem {
     index: number;
 }
 
+/** 索引条的排序权重：A-Z 之后才是 # */
+function indexRank(key: string): number {
+    return key === INDEX_SHARP ? 26 : key.charCodeAt(0) - 65;
+}
+
+
 /**
  * 按字段算出索引分组
  *
- * 注意：这里**不重新排序**，只是顺着当前列表（已按该字段排好）扫描，
- * 因此结果顺序和屏幕上的顺序完全一致。
+ * 列表顺序本身就是「A(英→中) B(英→中) … Z(英→中) #」，
+ * 所以这里扫描出来的顺序天然正确；再按权重排一次只是双保险。
  */
 export function buildIndexItems(
     musicList: IMusic.IMusicItem[] | undefined | null,
@@ -60,10 +57,12 @@ export function buildIndexItems(
             map.set(key, i);
         }
     }
-    return Array.from(map.entries()).map(([key, index]) => ({ key, index }));
+    return Array.from(map.entries())
+        .map(([key, index]) => ({ key, index }))
+        .sort((a, b) => indexRank(a.key) - indexRank(b.key) || a.index - b.index);
 }
 
-/** 索引条最多显示多少个标签，超出就均匀采样（否则中文歌单会挤出屏幕） */
+/** 索引条最多显示多少个标签，超出就均匀采样（否则长列表会挤出屏幕） */
 export const MAX_INDEX_COUNT = 28;
 
 /**

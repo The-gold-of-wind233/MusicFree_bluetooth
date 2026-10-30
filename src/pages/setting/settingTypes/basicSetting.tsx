@@ -133,6 +133,8 @@ export default function BasicSetting() {
     const showExitOnNotification = useAppConfig("basic.showExitOnNotification");
     const musicOrderInLocalSheet = useAppConfig("basic.musicOrderInLocalSheet");
     const tryChangeSourceWhenPlayFail = useAppConfig("basic.tryChangeSourceWhenPlayFail");
+    const cloudSuggest = useAppConfig("basic.cloudSuggest");
+    const cloudSuggestPlugin = useAppConfig("basic.cloudSuggestPlugin");
 
     const { t } = useI18N();
 
@@ -190,6 +192,28 @@ export default function BasicSetting() {
                     t("basicSettings.showExitOnNotification"),
                     "basic.showExitOnNotification",
                     showExitOnNotification ?? false,
+                ),
+
+                createSwitch(
+                    t("basicSettings.cloudSuggest"),
+                    "basic.cloudSuggest",
+                    cloudSuggest ?? true,
+                ),
+                createRadio(
+                    t("basicSettings.cloudSuggestPlugin"),
+                    "basic.cloudSuggestPlugin",
+                    ["", ...getSuggestPluginOptions().map(it => it.value)],
+                    cloudSuggestPlugin ?? "",
+                    {
+                        "": t("basicSettings.cloudSuggestPluginAuto"),
+                        ...Object.fromEntries(
+                            getSuggestPluginOptions().map(it => [
+                                it.value,
+                                it.label,
+                            ]),
+                        ),
+                    },
+                    () => clearCloudSuggestCache(),
                 ),
             ],
         },
@@ -691,7 +715,6 @@ function LyricSetting() {
     );
     const enableBluetoothLyric = useAppConfig("lyric.bluetoothLyric");
     const triggerValue = useAppConfig("lyric.bluetoothLyricTrigger");
-    const volumeFadeOnSwitch = useAppConfig("basic.volumeFadeOnSwitch");
     const enableLyricSwipeToSwitch = useAppConfig(
         "basic.lyricSwipeToSwitch",
     );
@@ -783,13 +806,6 @@ function LyricSetting() {
         },
     );
 
-    /** 切歌时的音量淡入淡出 */
-    const volumeFadeSwitch = createSwitch(
-        t("basicSettings.volumeFadeOnSwitch"),
-        "basic.volumeFadeOnSwitch",
-        volumeFadeOnSwitch ?? false,
-    );
-
     /** 歌词页左右滑切歌 */
     const lyricSwipeToSwitch = createSwitch(
         t("basicSettings.lyric.swipeToSwitch"),
@@ -878,19 +894,8 @@ function LyricSetting() {
                 onPress={lyricSwipeToSwitch.onPress}>
                 <ListItem.Content
                     title={lyricSwipeToSwitch.title}
-                    description={t("basicSettings.lyric.swipeToSwitchDesc")}
                 />
                 {lyricSwipeToSwitch.right}
-            </ListItem>
-            <ListItem
-                withHorizontalPadding
-                heightType="small"
-                onPress={volumeFadeSwitch.onPress}>
-                <ListItem.Content
-                    title={volumeFadeSwitch.title}
-                    description={t("basicSettings.volumeFadeOnSwitchDesc")}
-                />
-                {volumeFadeSwitch.right}
             </ListItem>
             <ListItem
                 withHorizontalPadding
@@ -913,9 +918,6 @@ function LyricSetting() {
                     onPress={hideStatusBarLyricWhenPaused.onPress}>
                     <ListItem.Content
                         title={hideStatusBarLyricWhenPaused.title}
-                        description={t(
-                            "basicSettings.lyric.hideStatusBarLyricWhenPausedDesc",
-                        )}
                     />
                     {hideStatusBarLyricWhenPaused.right}
                 </ListItem>
@@ -926,7 +928,6 @@ function LyricSetting() {
                 onPress={openBluetoothLyric.onPress}>
                 <ListItem.Content
                     title={openBluetoothLyric.title}
-                    description={t("basicSettings.lyric.bluetoothLyricDesc")}
                 />
                 {openBluetoothLyric.right}
             </ListItem>
@@ -947,9 +948,6 @@ function LyricSetting() {
                         onPress={bluetoothLyricTrigger.onPress}>
                         <ListItem.Content
                             title={bluetoothLyricTrigger.title}
-                            description={t(
-                                "basicSettings.lyric.bluetoothLyricTriggerDesc",
-                            )}
                         />
                         {bluetoothLyricTrigger.right}
                     </ListItem>

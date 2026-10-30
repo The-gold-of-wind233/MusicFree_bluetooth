@@ -5,6 +5,8 @@ export interface IAppConfigProperties {
     $schema: "2";
     // Basic
     "basic.autoPlayWhenAppStart": boolean;
+    "basic.cloudSuggest": boolean;
+    "basic.cloudSuggestPlugin": string;
     "basic.useCelluarNetworkPlay": boolean;
     "basic.useCelluarNetworkDownload": boolean;
     "basic.maxDownload": number;
@@ -24,8 +26,6 @@ export interface IAppConfigProperties {
     "basic.musicDetailDefault": "album" | "lyric";
     /** 歌词页左右滑动切歌：左滑下一首、右滑上一首 */
     "basic.lyricSwipeToSwitch": boolean;
-    /** 切歌时音量淡入淡出，避免新歌突然以全音量响起来 */
-    "basic.volumeFadeOnSwitch": boolean;
     "basic.musicDetailAwake": boolean;
     "basic.maxHistoryLen": number;
     "basic.autoUpdatePlugin": boolean;
