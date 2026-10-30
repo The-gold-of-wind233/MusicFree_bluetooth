@@ -8,6 +8,10 @@ import { showPanel } from "@/components/panels/usePanel";
 import { SortType } from "@/constants/commonConst.ts";
 import pathConst from "@/constants/pathConst";
 import Config, { useAppConfig } from "@/core/appConfig";
+import {
+    clearCloudSuggestCache,
+    getSuggestPluginOptions,
+} from "@/utils/cloudSuggest";
 import bluetoothLyric, { bluetoothLyricFields } from "@/core/bluetoothLyric";
 import { useI18N } from "@/core/i18n";
 import lyricManager from "@/core/lyricManager";

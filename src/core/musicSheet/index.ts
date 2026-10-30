@@ -149,6 +149,8 @@ class MusicSheetClazz implements IInjectable {
      * 已回填过时长歌曲的 key，避免同一首歌反复写存储
      */
     private durationBackfilled = new Set<string>();
+    /** 上次回填时看到的歌单数量；变了就清空上面的集合，让新歌单也能被补上 */
+    private durationBackfillSheetCount = -1;
 
     /**
      * 播放时把真实时长回填到歌单里
@@ -172,16 +174,25 @@ class MusicSheetClazz implements IInjectable {
         if (!key || this.durationBackfilled.has(key)) {
             return;
         }
-        const existing = musicItem.duration;
-        if (typeof existing === "number" && existing > 0) {
-            // 本来就有，不用回填
-            this.durationBackfilled.add(key);
-            return;
-        }
+        /**
+         * 注意：这里**不能**因为「当前播放的这首已经有 duration」就直接返回。
+         *
+         * 同一个源歌单导入到两个歌单时，两边是各自独立的对象：
+         * 从 A 播放拿到时长，B 里的同名歌曲仍然是空的，
+         * 于是两个歌单显示的总时长就不一样了。
+         * 所以必须扫描所有歌单，逐个补齐；下面每首歌自身的判断会避免重复写。
+         */
         this.durationBackfilled.add(key);
 
         try {
             const sheets = getDefaultStore().get(musicSheetsBaseAtom);
+            // 歌单数量变了（比如新建/导入了一个歌单），说明可能有新歌单没补过，
+            // 清掉记录让它重新扫一遍（只会发生一次）
+            if (this.durationBackfillSheetCount !== sheets.length) {
+                this.durationBackfillSheetCount = sheets.length;
+                this.durationBackfilled.clear();
+                this.durationBackfilled.add(key);
+            }
             for (const sheet of sheets) {
                 const list = this.getSortedMusicListBySheetId(sheet.id);
                 const arr = list.musicList;

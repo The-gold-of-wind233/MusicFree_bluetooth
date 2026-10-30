@@ -39,8 +39,12 @@ function iconOf(kind: string): any {
     }
 }
 
-/** 云端联想的防抖时长 */
-const CLOUD_DEBOUNCE = 400;
+/**
+ * 云端联想**不做防抖**。
+ *
+ * 原因：用输入法时，文字是「打完（或选完候选词）之后」才整体传进搜索栏的，
+ * 不存在"边敲边触发"的情况，防抖只会白白增加等待。
+ */
 
 export default function SuggestPanel() {
     const query = useAtomValue(queryAtom);
@@ -56,7 +60,6 @@ export default function SuggestPanel() {
         { text: string; desc?: string }[]
     >([]);
 
-    const timerRef = useRef<any>(null);
 
     useEffect(() => {
         getHistory().then(h => setHistory(h ?? []));
@@ -71,30 +74,23 @@ export default function SuggestPanel() {
     // 第二层：云端联想（防抖 400ms，用 1 个插件真搜）
     useEffect(() => {
         const q = (query ?? "").trim();
-        if (timerRef.current) {
-            clearTimeout(timerRef.current);
-            timerRef.current = null;
-        }
-
         const enabled = Config.getConfig("basic.cloudSuggest") !== false;
         if (!enabled || !q) {
             setCloudItems([]);
             return;
         }
 
-        timerRef.current = setTimeout(async () => {
-            const result = await fetchCloudSuggestions(q);
-            // 返回 null 表示这次请求已过期（输入变了），忽略
-            if (result === null) {
+        let alive = true;
+        fetchCloudSuggestions(q).then(result => {
+            // result 为 null 表示这次请求已过期（输入又变了），忽略
+            if (!alive || result === null) {
                 return;
             }
             setCloudItems(result);
-        }, CLOUD_DEBOUNCE);
+        });
 
         return () => {
-            if (timerRef.current) {
-                clearTimeout(timerRef.current);
-            }
+            alive = false;
         };
     }, [query]);
 

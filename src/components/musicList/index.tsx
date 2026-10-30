@@ -105,10 +105,28 @@ export default function MusicList(props: IMusicListProps) {
     /** 点击索引条：跳到该字母的第一首 */
     const scrollToIndexItem = useCallback((item: IIndexItem) => {
         try {
+            /**
+             * 跳两次。
+             *
+             * FlashList 第一次 scrollToIndex 是按 estimatedItemSize **估算**位置的，
+             * 跳过去之后真实渲染出来发现高度对不上，会自动修正 —— 表现就是列表"抖一下"。
+             * 下一帧再跳一次，此时目标区域已经渲染过、高度准确，就不会再修正了。
+             */
             flashListRef.current?.scrollToIndex({
                 index: item.index,
                 animated: false,
                 viewPosition: 0,
+            });
+            requestAnimationFrame(() => {
+                try {
+                    flashListRef.current?.scrollToIndex({
+                        index: item.index,
+                        animated: false,
+                        viewPosition: 0,
+                    });
+                } catch {
+                    // 忽略
+                }
             });
         } catch {
             // 下标越界等情况直接忽略，不影响使用
