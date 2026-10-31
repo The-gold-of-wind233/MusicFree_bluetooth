@@ -4,6 +4,8 @@ import rpx from "@/utils/rpx";
 import { FlashList } from "@shopify/flash-list";
 import React, { useRef, useCallback, useState, useEffect } from "react";
 import { FlatListProps, Pressable, StyleSheet, View } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { runOnJS } from "react-native-reanimated";
 import ListEmpty from "../base/listEmpty";
 import ListFooter from "../base/listFooter";
 import MusicItem from "../mediaItem/musicItem";
@@ -102,36 +104,114 @@ export default function MusicList(props: IMusicListProps) {
         return sampleIndexItems(buildIndexItems(musicList, field));
     }, [musicList, sortType]);
 
-    /** 点击索引条：跳到该字母的第一首 */
+    /** 索引条当前按到的位置（用于气泡和字母高亮），null = 没在按 */
+    const [activeIndexPos, setActiveIndexPos] = useState<number | null>(null);
+    /** 索引条可点击区域的高度，用来算手指落在哪个字母上 */
+    const indexBarHeightRef = useRef(0);
+    /** 上一次触发的位置，避免同一字母重复跳转 */
+    const lastIndexPosRef = useRef(-1);
+    /** 等待「精确校正」的目标，保证连续滑动时只有最后一次生效 */
+    const pendingIndexRef = useRef<number | null>(null);
+
+    /** 跳到某个字母的第一首 */
     const scrollToIndexItem = useCallback((item: IIndexItem) => {
+        const list = flashListRef.current;
+        if (!list) {
+            return;
+        }
+        pendingIndexRef.current = item.index;
         try {
-            /**
-             * 跳两次。
-             *
-             * FlashList 第一次 scrollToIndex 是按 estimatedItemSize **估算**位置的，
-             * 跳过去之后真实渲染出来发现高度对不上，会自动修正 —— 表现就是列表"抖一下"。
-             * 下一帧再跳一次，此时目标区域已经渲染过、高度准确，就不会再修正了。
-             */
-            flashListRef.current?.scrollToIndex({
+            list.scrollToIndex({
                 index: item.index,
                 animated: false,
                 viewPosition: 0,
             });
-            requestAnimationFrame(() => {
-                try {
-                    flashListRef.current?.scrollToIndex({
-                        index: item.index,
-                        animated: false,
-                        viewPosition: 0,
-                    });
-                } catch {
-                    // 忽略
-                }
-            });
         } catch {
-            // 下标越界等情况直接忽略，不影响使用
+            return;
         }
+        /**
+         * 抖动的根因：FlashList 第一次跳转是按 estimatedItemSize **估算**位置的，
+         * 目标区域渲染出来后它会自己校正一次，画面就"抖一下"。
+         *
+         * 所以这里等它校正完（80ms，够渲染几帧）再精确跳一次 ——
+         * 此时目标已经在渲染窗口内、高度是真实值，不会再校正，画面就稳了。
+         *
+         * pendingIndexRef 保证连续滑动时只有最后一次校正生效，不会互相打断。
+         */
+        setTimeout(() => {
+            if (pendingIndexRef.current !== item.index) {
+                return;
+            }
+            pendingIndexRef.current = null;
+            try {
+                list.scrollToIndex({
+                    index: item.index,
+                    animated: false,
+                    viewPosition: 0,
+                });
+            } catch {
+                // 忽略
+            }
+        }, 80);
     }, []);
+
+    /**
+     * 手指在索引条上的位置 → 对应的字母
+     *
+     * 索引条每项等高，所以直接用「相对高度 / 单项高度」算出第几个，
+     * 不用逐个测量，滑动时开销也小。
+     */
+    const handleIndexTouch = useCallback(
+        (y: number) => {
+            const total = indexItems.length;
+            const height = indexBarHeightRef.current;
+            if (!total || !height) {
+                return;
+            }
+            const itemHeight = height / total;
+            let pos = Math.floor(y / itemHeight);
+            if (pos < 0) {
+                pos = 0;
+            } else if (pos > total - 1) {
+                pos = total - 1;
+            }
+            if (pos === lastIndexPosRef.current) {
+                return;
+            }
+            lastIndexPosRef.current = pos;
+            setActiveIndexPos(pos);
+            scrollToIndexItem(indexItems[pos]);
+        },
+        [indexItems, scrollToIndexItem],
+    );
+
+    /** 松手后延迟收起气泡，让用户看清最后停在哪 */
+    const handleIndexRelease = useCallback(() => {
+        setTimeout(() => {
+            setActiveIndexPos(null);
+            lastIndexPosRef.current = -1;
+        }, 500);
+    }, []);
+
+    /**
+     * 索引条手势：按下即响应（minDistance 0），滑动时连续切换字母。
+     * 回调工作在 UI 线程，所以通过 runOnJS 回到 JS 线程。
+     */
+    const indexGesture = React.useMemo(
+        () =>
+            Gesture.Pan()
+                .minDistance(0)
+                .onStart(evt => {
+                    runOnJS(handleIndexTouch)(evt.y);
+                })
+                .onUpdate(evt => {
+                    runOnJS(handleIndexTouch)(evt.y);
+                })
+                .onEnd(() => {
+                    runOnJS(handleIndexRelease)();
+                }),
+        [handleIndexTouch, handleIndexRelease],
+    );
 
     // 处理滚动开始
     const handleScrollBegin = useCallback(() => {
@@ -228,16 +308,48 @@ export default function MusicList(props: IMusicListProps) {
             />              
             {indexItems.length > 1 ? (
                 <View style={styles.indexBar} pointerEvents="box-none">
-                    {indexItems.map(item => (
-                        <Pressable
-                            key={`${item.key}-${item.index}`}
-                            style={styles.indexItem}
-                            onPress={() => scrollToIndexItem(item)}>
-                            <ThemeText fontSize="description" fontColor="textSecondary">
-                                {item.key}
-                            </ThemeText>
-                        </Pressable>
-                    ))}
+                    <GestureDetector gesture={indexGesture}>
+                        <View
+                            style={styles.indexInner}
+                            collapsable={false}
+                            onLayout={evt => {
+                                indexBarHeightRef.current =
+                                    evt.nativeEvent.layout.height;
+                            }}>
+                            {indexItems.map((item, i) => (
+                                <View
+                                    key={`${item.key}-${item.index}`}
+                                    style={styles.indexItem}>
+                                    <ThemeText
+                                        fontSize="description"
+                                        fontColor={
+                                            activeIndexPos === i
+                                                ? "text"
+                                                : "textSecondary"
+                                        }
+                                        fontWeight={
+                                            activeIndexPos === i
+                                                ? "bold"
+                                                : "regular"
+                                        }>
+                                        {item.key}
+                                    </ThemeText>
+                                </View>
+                            ))}
+                        </View>
+                    </GestureDetector>
+                </View>
+            ) : null}
+            {activeIndexPos !== null ? (
+                <View style={styles.bubbleWrap} pointerEvents="none">
+                    <View style={styles.indexBubble}>
+                        <ThemeText
+                            fontSize="appbar"
+                            fontWeight="bold"
+                            fontColor="text">
+                            {indexItems[activeIndexPos]?.key}
+                        </ThemeText>
+                    </View>
                 </View>
             ) : null}
             {showBadge && (
@@ -277,6 +389,30 @@ const styles = StyleSheet.create({
         justifyContent: "center",
         alignItems: "center",
         zIndex: 900,
+    },
+    indexInner: {
+        width: "100%",
+        justifyContent: "center",
+        alignItems: "center",
+    },
+    /** 气泡的居中容器 */
+    bubbleWrap: {
+        position: "absolute",
+        top: 0,
+        bottom: 0,
+        left: 0,
+        right: 0,
+        justifyContent: "center",
+        alignItems: "center",
+        zIndex: 1200,
+    },
+    indexBubble: {
+        width: rpx(140),
+        height: rpx(140),
+        borderRadius: rpx(70),
+        backgroundColor: "rgba(0, 0, 0, 0.5)",
+        justifyContent: "center",
+        alignItems: "center",
     },
     indexItem: {
         width: rpx(48),

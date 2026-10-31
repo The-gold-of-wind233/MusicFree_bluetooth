@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import rpx from "@/utils/rpx";
 import { ImgAsset } from "@/constants/assetsConst";
 import FastImage from "@/components/base/fastImage";
@@ -8,6 +8,7 @@ import { useCurrentMusic } from "@/core/trackPlayer";
 import globalStyle from "@/constants/globalStyle";
 import { View } from "react-native";
 import Operations from "./operations";
+import { registerCoverSwitchHandler } from "./switchBus";
 import { showPanel } from "@/components/panels/usePanel.ts";
 import TrackPlayer from "@/core/trackPlayer";
 import Config from "@/core/appConfig";
@@ -87,7 +88,7 @@ export default function AlbumCover(props: IProps) {
      * 切歌动作。通过 runOnJS 从 worklet 回到 JS 线程执行
      * @param direction 1 = 下一首，-1 = 上一首
      */
-    function switchSong(direction: number) {
+    const switchSong = useCallback((direction: number) => {
         try {
             if (direction > 0) {
                 TrackPlayer.skipToNext();
@@ -95,9 +96,66 @@ export default function AlbumCover(props: IProps) {
                 TrackPlayer.skipToPrevious();
             }
         } catch (e) {
-            errorLog("滑动切歌失败", e);
+            errorLog("切歌失败", e);
         }
-    }
+    }, []);
+
+    /** 是否正在播放切歌动画（用于连点时不再叠加动画） */
+    const switchingRef = useRef(false);
+
+    const markSwitchIdle = useCallback(() => {
+        switchingRef.current = false;
+    }, []);
+
+    /** 动画结束后真正切歌，并复位标记 */
+    const finishSwitch = useCallback(
+        (direction: number) => {
+            switchSong(direction);
+            switchingRef.current = false;
+        },
+        [switchSong],
+    );
+
+    /**
+     * 点上一首 / 下一首按钮时走这里：和左右滑完全同一套动画。
+     *
+     * 顺序同样是「当前封面滑出 → 切歌 → 新封面从另一侧滑入」，
+     * 否则封面会先换掉，滑出去的就是新歌的封面了。
+     */
+    const handleButtonSwitch = useCallback(
+        (direction: number) => {
+            // 上一次动画还没结束，直接切，避免动画叠加导致封面乱飞
+            if (switchingRef.current) {
+                switchSong(direction);
+                return;
+            }
+            switchingRef.current = true;
+            translateX.value = withTiming(
+                -direction * SLIDE_DISTANCE,
+                { duration: 130 },
+                finished => {
+                    if (!finished) {
+                        runOnJS(markSwitchIdle)();
+                        return;
+                    }
+                    // 此刻封面在屏幕外，切换不会被看到
+                    runOnJS(finishSwitch)(direction);
+                    translateX.value = direction * SLIDE_DISTANCE;
+                    translateX.value = withTiming(0, { duration: 200 });
+                },
+            );
+        },
+        [finishSwitch, markSwitchIdle, switchSong],
+    );
+
+    /**
+     * 封面页在前台时，把切歌按钮的请求接管过来；
+     * 切到歌词页（组件卸载）后自动注销，按钮恢复成立即切歌。
+     */
+    useEffect(() => {
+        registerCoverSwitchHandler(handleButtonSwitch);
+        return () => registerCoverSwitchHandler(null);
+    }, [handleButtonSwitch]);
 
     /**
      * 左右滑切歌：左滑下一首、右滑上一首

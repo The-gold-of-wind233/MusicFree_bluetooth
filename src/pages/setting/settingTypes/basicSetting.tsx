@@ -8,10 +8,6 @@ import { showPanel } from "@/components/panels/usePanel";
 import { SortType } from "@/constants/commonConst.ts";
 import pathConst from "@/constants/pathConst";
 import Config, { useAppConfig } from "@/core/appConfig";
-import {
-    clearCloudSuggestCache,
-    getSuggestPluginOptions,
-} from "@/utils/cloudSuggest";
 import bluetoothLyric, { bluetoothLyricFields } from "@/core/bluetoothLyric";
 import { useI18N } from "@/core/i18n";
 import lyricManager from "@/core/lyricManager";
@@ -50,6 +46,32 @@ function createSwitch(
         onPress,
         right: <ThemeSwitch value={value} onValueChange={onPress} />,
     };
+}
+
+/**
+ * 延迟加载联网联想模块。
+ *
+ * 不能静态 import：cloudSuggest 依赖 pluginManager，而 pluginManager 的依赖链很深，
+ * 和设置页这条链容易形成循环依赖 —— Hermes 下模块初始化顺序不确定，
+ * 就会报 "Property 'getSuggestPluginOptions' doesn't exist"。
+ *
+ * 改成在调用时 require，此时所有模块都已初始化完成，彻底规避。
+ */
+function requireCloudSuggest(): any {
+    try {
+        return require("@/utils/cloudSuggest");
+    } catch {
+        return null;
+    }
+}
+
+/** 取可用于联网联想的插件列表（用于设置里的单选） */
+function getSuggestPluginOptionsSafe(): { label: string; value: string }[] {
+    try {
+        return requireCloudSuggest()?.getSuggestPluginOptions?.() ?? [];
+    } catch {
+        return [];
+    }
 }
 
 const createRadio = function (
@@ -206,18 +228,18 @@ export default function BasicSetting() {
                 createRadio(
                     t("basicSettings.cloudSuggestPlugin"),
                     "basic.cloudSuggestPlugin",
-                    ["", ...getSuggestPluginOptions().map(it => it.value)],
+                    ["", ...getSuggestPluginOptionsSafe().map(it => it.value)],
                     cloudSuggestPlugin ?? "",
                     {
                         "": t("basicSettings.cloudSuggestPluginAuto"),
                         ...Object.fromEntries(
-                            getSuggestPluginOptions().map(it => [
+                            getSuggestPluginOptionsSafe().map(it => [
                                 it.value,
                                 it.label,
                             ]),
                         ),
                     },
-                    () => clearCloudSuggestCache(),
+                    () => requireCloudSuggest()?.clearCloudSuggestCache?.(),
                 ),
             ],
         },

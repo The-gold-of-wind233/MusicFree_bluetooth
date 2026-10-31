@@ -13,6 +13,7 @@ import { showPanel } from "@/components/panels/usePanel";
 import TrackPlayer, { useMusicState, useRepeatMode } from "@/core/trackPlayer";
 import useOrientation from "@/hooks/useOrientation";
 import delay from "@/utils/delay";
+import { requestCoverSwitch } from "../content/albumCover/switchBus";
 import { musicIsBuffering, musicIsPaused } from "@/utils/trackUtils";
 
 export default function () {
@@ -48,7 +49,14 @@ export default function () {
                     name={"skip-left"}
                     size={rpx(56)}
                     onPress={() => {
-                        TrackPlayer.skipToPrevious();
+                        /**
+                         * 先问封面页要不要播切歌动画。
+                         * 封面页在前台时它会接管：先滑出当前封面，再切歌，最后滑入新封面；
+                         * 不在前台（比如在歌词页）就直接切。
+                         */
+                        if (!requestCoverSwitch(-1)) {
+                            TrackPlayer.skipToPrevious();
+                        }
                     }}
                 />
                 {musicIsBuffering(musicState) ? (
@@ -75,7 +83,9 @@ export default function () {
                     name={"skip-right"}
                     size={rpx(56)}
                     onPress={() => {
-                        TrackPlayer.skipToNext();
+                        if (!requestCoverSwitch(1)) {
+                            TrackPlayer.skipToNext();
+                        }
                     }}
                 />
                 <Icon

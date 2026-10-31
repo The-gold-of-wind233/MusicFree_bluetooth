@@ -15,9 +15,30 @@
  * 那些叠起来会让联想退化成「搜索结果预览」，失去边打边看的意义。
  */
 
-import PluginManager from "@/core/pluginManager";
-import Config from "@/core/appConfig";
 import { errorLog } from "@/utils/log";
+
+/**
+ * pluginManager 用**延迟 require**，不静态 import。
+ *
+ * 原因：pluginManager 依赖链很深（22 个 import），任何静态引用它的模块
+ * 都容易卷进循环依赖，Hermes 下会报 "Property 'xxx' doesn't exist"。
+ * 这里只在真正要联网时才加载，调用时机远晚于模块初始化，安全。
+ */
+function getPluginManager(): any {
+    try {
+        return require("@/core/pluginManager").default;
+    } catch {
+        return null;
+    }
+}
+
+function getConfig(): any {
+    try {
+        return require("@/core/appConfig").default;
+    } catch {
+        return null;
+    }
+}
 
 export interface ICloudSuggestItem {
     text: string;
@@ -43,11 +64,15 @@ let seq = 0;
  * 优先用设置里指定的，没指定就用搜索排序的第一个。
  */
 function getSuggestPlugin() {
-    const plugins = PluginManager.getSortedSearchablePlugins("music");
-    if (!plugins.length) {
+    const PluginManager = getPluginManager();
+    if (!PluginManager) {
         return null;
     }
-    const preferredHash = Config.getConfig("basic.cloudSuggestPlugin");
+    const plugins = PluginManager.getSortedSearchablePlugins("music");
+    if (!plugins?.length) {
+        return null;
+    }
+    const preferredHash = getConfig()?.getConfig("basic.cloudSuggestPlugin");
     if (preferredHash) {
         const hit = plugins.find(it => it.hash === preferredHash);
         if (hit) {
@@ -136,8 +161,14 @@ export function clearCloudSuggestCache() {
 
 /** 给设置页用：当前可用于联想的插件列表 */
 export function getSuggestPluginOptions() {
-    return PluginManager.getSortedSearchablePlugins("music").map(it => ({
-        label: it.instance.platform ?? it.name,
-        value: it.hash,
-    }));
+    const PluginManager = getPluginManager();
+    if (!PluginManager) {
+        return [];
+    }
+    return (PluginManager.getSortedSearchablePlugins("music") ?? []).map(
+        (it: any) => ({
+            label: it.instance?.platform ?? it.name,
+            value: it.hash,
+        }),
+    );
 }
