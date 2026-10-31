@@ -112,6 +112,8 @@ export default function MusicList(props: IMusicListProps) {
     const lastIndexPosRef = useRef(-1);
     /** 等待「精确校正」的目标，保证连续滑动时只有最后一次生效 */
     const pendingIndexRef = useRef<number | null>(null);
+    /** 气泡自动收起的兜底定时器 */
+    const bubbleTimerRef = useRef<any>(null);
 
     /** 跳到某个字母的第一首 */
     const scrollToIndexItem = useCallback((item: IIndexItem) => {
@@ -180,6 +182,17 @@ export default function MusicList(props: IMusicListProps) {
             }
             lastIndexPosRef.current = pos;
             setActiveIndexPos(pos);
+            /**
+             * 兜底：万一 onEnd / onFinalize 都没来（轻点且手势没激活时可能这样），
+             * 气泡也得自己消失，否则会一直挂在屏幕中间。
+             */
+            if (bubbleTimerRef.current) {
+                clearTimeout(bubbleTimerRef.current);
+            }
+            bubbleTimerRef.current = setTimeout(() => {
+                setActiveIndexPos(null);
+                lastIndexPosRef.current = -1;
+            }, 1200);
             scrollToIndexItem(indexItems[pos]);
         },
         [indexItems, scrollToIndexItem],
@@ -187,6 +200,10 @@ export default function MusicList(props: IMusicListProps) {
 
     /** 松手后延迟收起气泡，让用户看清最后停在哪 */
     const handleIndexRelease = useCallback(() => {
+        if (bubbleTimerRef.current) {
+            clearTimeout(bubbleTimerRef.current);
+            bubbleTimerRef.current = null;
+        }
         setTimeout(() => {
             setActiveIndexPos(null);
             lastIndexPosRef.current = -1;
@@ -194,20 +211,31 @@ export default function MusicList(props: IMusicListProps) {
     }, []);
 
     /**
-     * 索引条手势：按下即响应（minDistance 0），滑动时连续切换字母。
-     * 回调工作在 UI 线程，所以通过 runOnJS 回到 JS 线程。
+     * 索引条手势。
+     *
+     * ⚠️ 这里用的是 **onBegin，不是 onStart**。
+     * onStart 要等手势「激活」才调用，而 Pan 在手指完全没移动时（也就是轻点）
+     * 在 Android 上不一定激活 —— 表现就是轻点没反应、滑动才有用。
+     * onBegin 是手指一按下就调用，不依赖激活，所以轻点也能立刻跳转。
+     *
+     * onUpdate 负责滑动过程中的连续切换，onEnd 负责收起气泡。
+     * 回调跑在 UI 线程，所以通过 runOnJS 回到 JS 线程。
      */
     const indexGesture = React.useMemo(
         () =>
             Gesture.Pan()
                 .minDistance(0)
-                .onStart(evt => {
+                .onBegin(evt => {
                     runOnJS(handleIndexTouch)(evt.y);
                 })
                 .onUpdate(evt => {
                     runOnJS(handleIndexTouch)(evt.y);
                 })
                 .onEnd(() => {
+                    runOnJS(handleIndexRelease)();
+                })
+                .onFinalize(() => {
+                    // 手势被取消（比如被系统手势打断）也要收起气泡
                     runOnJS(handleIndexRelease)();
                 }),
         [handleIndexTouch, handleIndexRelease],
@@ -255,6 +283,9 @@ export default function MusicList(props: IMusicListProps) {
         return () => {
             if (hideTimeoutRef.current) {
                 clearTimeout(hideTimeoutRef.current);
+            }
+            if (bubbleTimerRef.current) {
+                clearTimeout(bubbleTimerRef.current);
             }
         };
     }, []);    
@@ -394,6 +425,8 @@ const styles = StyleSheet.create({
         width: "100%",
         justifyContent: "center",
         alignItems: "center",
+        /** 索引条视觉上很窄，把手感区域往左右各扩一点，避免点偏 */
+        paddingHorizontal: rpx(12),
     },
     /** 气泡的居中容器 */
     bubbleWrap: {
