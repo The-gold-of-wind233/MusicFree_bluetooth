@@ -1,9 +1,14 @@
 import { RequestStateCode } from "@/constants/commonConst";
 import TrackPlayer from "@/core/trackPlayer";
 import rpx from "@/utils/rpx";
-import { FlashList } from "@shopify/flash-list";
 import React, { useRef, useCallback, useState, useEffect } from "react";
-import { FlatListProps, Pressable, StyleSheet, View } from "react-native";
+import {
+    FlatList,
+    FlatListProps,
+    Pressable,
+    StyleSheet,
+    View,
+} from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
 import ListEmpty from "../base/listEmpty";
@@ -54,20 +59,14 @@ interface IMusicListProps {
 /**
  * 每一行的固定高度。
  * MusicItem 用的是 ListItem 的 heightType="big"，正好等于 rpx(120)。
- * 所有行严格等高，所以可以直接用 行数 × ITEM_HEIGHT 算精确偏移。
+ * 所有行严格等高，所以可以给 FlatList 提供精确的 getItemLayout。
  */
 const ITEM_HEIGHT = rpx(120);
 
 /**
  * A-Z 索引条（含气泡）。
  *
- * ⚠️ 必须做成**独立组件**：
- * 之前把「当前按到哪个字母」的 state 放在 MusicList 主组件里，
- * 手指每滑过一个字母就 setState 一次 → 整个 MusicList 重渲染 →
- * FlashList 收到新的 ListHeaderComponent / ListEmptyComponent 引用 →
- * 重新测量布局 → 列表内容抖一下。这正是"点字母会颤抖、而且有概率"的根因。
- *
- * 抽出来之后，按索引条只会重渲染这个小小的索引条，列表完全不受影响。
+ * 做成独立组件：按索引条只会重渲染这小小的一条，不会带动列表重渲染。
  */
 interface IIndexBarProps {
     items: IIndexItem[];
@@ -119,7 +118,7 @@ function IndexBar(props: IIndexBarProps) {
             }
             lastPosRef.current = pos;
             setActivePos(pos);
-            // 兜底：onEnd / onFinalize 都没来（轻点且手势未激活）时气泡也要消失
+            // 兜底：onEnd / onFinalize 都没来时气泡也要消失
             clearTimer();
             timerRef.current = setTimeout(hideBubble, 1200);
             onSelect(items[pos]);
@@ -128,7 +127,7 @@ function IndexBar(props: IIndexBarProps) {
     );
 
     /**
-     * ⚠️ 用 onBegin，不用 onStart。
+     * 用 onBegin，不用 onStart。
      * onStart 要等手势激活，轻点（无位移）在 Android 上不一定激活 → 轻点没反应。
      * onBegin 手指一按下就调用，不依赖激活。
      */
@@ -214,12 +213,21 @@ export default function MusicList(props: IMusicListProps) {
         onItemLongPress,
     } = props;
     const colors = useColors();
-    const flashListRef = useRef<FlashList<IMusic.IMusicItem>>(null);
+    const listRef = useRef<FlatList<IMusic.IMusicItem>>(null);
     const [showBadge, setShowBadge] = useState(false);
     const hideTimeoutRef = useRef<NodeJS.Timeout>();
 
-    /** 列表头部的真实高度，靠 onLayout 测量（它是可变的，不能写死） */
+    /**
+     * 列表头部的真实高度。
+     * getItemLayout 必须把它算进 offset，否则跳转会整体偏一个头部高度。
+     * 只在数值真的变化时 setState，避免 onLayout 反复触发导致多余重渲染。
+     */
+    const [headerHeight, setHeaderHeight] = useState(0);
     const headerHeightRef = useRef(0);
+
+    /** 程序化跳转中：这段时间内屏蔽滚动回调引起的 setState */
+    const programmaticScrollRef = useRef(false);
+    const programmaticTimerRef = useRef<any>(null);
 
     // 查找高亮项的索引
     const highlightIndex = React.useMemo(() => {
@@ -246,39 +254,61 @@ export default function MusicList(props: IMusicListProps) {
     }, [musicList, sortType]);
 
     /**
-     * 精确跳到某一行。
+     * 精确布局。
      *
-     * ⚠️ 不用 scrollToIndex：
-     * FlashList 的 scrollToIndex 按 estimatedItemSize **估算**位置，跳过去之后
-     * 目标区域真实渲染出来发现高度对不上，会自己校正一次 —— 那就是"抖一下"。
-     * 之前试过跳两次、延迟 80ms 再校正，都没根治，因为校正本身就会发生。
+     * ⚠️ 这是消除抖动的关键，也是这次和前几版最本质的区别：
      *
-     * 这里改成 **scrollToOffset 直接给像素偏移**，完全绕开估算逻辑：
-     *   offset = 头部真实高度 + 第几行 × 每行固定高度
-     * 所有行都是严格等高的（ListItem heightType="big" = rpx(120)），所以精确。
+     * FlashList 的布局是**估算**的（estimatedItemSize）。无论用 scrollToIndex
+     * 还是 scrollToOffset，只要跳到还没渲染过的区域，它都会先按估算滚过去，
+     * 等真实内容挂载后再校正一次位置 —— 那一校正就是"抖一下"，而且"有概率"
+     * （跳到已渲染区域不抖，跳远处就抖）。前两版一直在跟这个校正较劲，
+     * 跳两次、延迟校正、自己算偏移，都没用，因为估算本身还在。
+     *
+     * 换成 FlatList + getItemLayout：每一行的位置和高度由这里**同步精确给出**，
+     * 列表不再需要任何估算，跳转一次到位，不存在"渲染后再修正"。
+     *
+     * offset 要加上头部高度：FlatList 的 offset 是从内容起点算的，包含 header。
      */
-    const scrollToRow = useCallback((index: number) => {
-        const list = flashListRef.current;
-        if (!list || index < 0) {
-            return;
+    const getItemLayout = useCallback(
+        (_data: any, index: number) => ({
+            length: ITEM_HEIGHT,
+            offset: headerHeight + index * ITEM_HEIGHT,
+            index,
+        }),
+        [headerHeight],
+    );
+
+    /** 标记一次程序化跳转，短暂屏蔽滚动回调的 setState */
+    const markProgrammaticScroll = useCallback(() => {
+        programmaticScrollRef.current = true;
+        if (programmaticTimerRef.current) {
+            clearTimeout(programmaticTimerRef.current);
         }
-        const offset = headerHeightRef.current + index * ITEM_HEIGHT;
-        try {
-            const anyList = list as any;
-            if (typeof anyList.scrollToOffset === "function") {
-                anyList.scrollToOffset({ offset, animated: false });
-            } else {
-                // 极老版本 FlashList 没有 scrollToOffset 时退回按 index 跳
-                anyList.scrollToIndex({
+        programmaticTimerRef.current = setTimeout(() => {
+            programmaticScrollRef.current = false;
+        }, 200);
+    }, []);
+
+    /** 精确跳到某一行 */
+    const scrollToRow = useCallback(
+        (index: number) => {
+            const list = listRef.current;
+            if (!list || index < 0) {
+                return;
+            }
+            markProgrammaticScroll();
+            try {
+                list.scrollToIndex({
                     index,
                     animated: false,
                     viewPosition: 0,
                 });
+            } catch {
+                // 越界等情况忽略
             }
-        } catch {
-            // 越界等情况忽略
-        }
-    }, []);
+        },
+        [markProgrammaticScroll],
+    );
 
     /** 索引条选中某个字母 */
     const onIndexSelect = useCallback(
@@ -288,10 +318,7 @@ export default function MusicList(props: IMusicListProps) {
         [scrollToRow],
     );
 
-    /**
-     * 头部包一层测量用的 View。
-     * 用 useMemo 固定引用，避免 FlashList 因为 header 引用变化而重新测量布局。
-     */
+    /** 头部包一层测量 View；固定引用避免列表重复测量布局 */
     const headerComponent = React.useMemo(() => {
         if (!Header) {
             return undefined;
@@ -300,7 +327,11 @@ export default function MusicList(props: IMusicListProps) {
             <View
                 collapsable={false}
                 onLayout={evt => {
-                    headerHeightRef.current = evt.nativeEvent.layout.height;
+                    const h = evt.nativeEvent.layout.height;
+                    if (Math.abs(h - headerHeightRef.current) > 1) {
+                        headerHeightRef.current = h;
+                        setHeaderHeight(h);
+                    }
                 }}>
                 {Header}
             </View>
@@ -322,6 +353,10 @@ export default function MusicList(props: IMusicListProps) {
 
     // 处理滚动开始
     const handleScrollBegin = useCallback(() => {
+        // 程序化跳转期间不响应，避免多余的 setState 造成重渲染
+        if (programmaticScrollRef.current) {
+            return;
+        }
         if (highlightIndex !== -1) {
             if (hideTimeoutRef.current) {
                 clearTimeout(hideTimeoutRef.current);
@@ -341,7 +376,7 @@ export default function MusicList(props: IMusicListProps) {
         }, 5000);
     }, []);
 
-    // 滚动到高亮项（同样用精确偏移）
+    // 滚动到高亮项（同样走精确布局）
     const scrollToHighlight = useCallback(() => {
         if (highlightIndex !== -1) {
             scrollToRow(highlightIndex);
@@ -357,6 +392,9 @@ export default function MusicList(props: IMusicListProps) {
         return () => {
             if (hideTimeoutRef.current) {
                 clearTimeout(hideTimeoutRef.current);
+            }
+            if (programmaticTimerRef.current) {
+                clearTimeout(programmaticTimerRef.current);
             }
         };
     }, []);
@@ -397,14 +435,15 @@ export default function MusicList(props: IMusicListProps) {
 
     return (
         <View style={styles.container}>
-            <FlashList
-                ref={flashListRef}
+            <FlatList
+                ref={listRef}
                 ListHeaderComponent={headerComponent}
                 ListEmptyComponent={emptyComponent}
                 ListFooterComponent={footerComponent}
                 extraData={highlightMusicItem}
                 data={musicList ?? []}
-                estimatedItemSize={ITEM_HEIGHT}
+                getItemLayout={getItemLayout}
+                initialNumToRender={20}
                 onScrollBeginDrag={handleScrollBegin}
                 onScrollEndDrag={handleScrollEnd}
                 onMomentumScrollEnd={handleScrollEnd}
