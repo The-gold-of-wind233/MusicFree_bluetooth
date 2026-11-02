@@ -228,6 +228,10 @@ export default function MusicList(props: IMusicListProps) {
     /** 程序化跳转中：这段时间内屏蔽滚动回调引起的 setState */
     const programmaticScrollRef = useRef(false);
     const programmaticTimerRef = useRef<any>(null);
+    /** 待跳转的行号：同一帧内只保留最后一次 */
+    const pendingIndexRef = useRef<number | null>(null);
+    /** 合并跳转用的 rAF 句柄 */
+    const rafRef = useRef<number | null>(null);
 
     // 查找高亮项的索引
     const highlightIndex = React.useMemo(() => {
@@ -289,25 +293,49 @@ export default function MusicList(props: IMusicListProps) {
         }, 200);
     }, []);
 
-    /** 精确跳到某一行 */
+    /** 真正执行一次跳转（由 rAF 调用） */
+    const flushPendingScroll = useCallback(() => {
+        rafRef.current = null;
+        const index = pendingIndexRef.current;
+        pendingIndexRef.current = null;
+        const list = listRef.current;
+        if (index === null || index < 0 || !list) {
+            return;
+        }
+        markProgrammaticScroll();
+        try {
+            list.scrollToIndex({
+                index,
+                animated: false,
+                viewPosition: 0,
+            });
+        } catch {
+            // 越界等情况忽略
+        }
+    }, [markProgrammaticScroll]);
+
+    /**
+     * 精确跳到某一行 —— 同一帧内多次调用只执行最后一次。
+     *
+     * ⚠️ 这是修「滑动索引条时画面空白」的关键：
+     * 手指快速滑过十几个字母时，原来会连发十几次 scrollToIndex，
+     * 每一次都让 FlatList 重新计算渲染窗口、丢弃刚排好的渲染批次，
+     * 结果就是位置到了、cell 还没铺出来 → 白屏。
+     *
+     * 现在把请求合并到下一帧，一帧最多跳一次，渲染窗口有足够时间铺满。
+     * 轻点也只多等一帧（~16ms），手感无影响。
+     */
     const scrollToRow = useCallback(
         (index: number) => {
-            const list = listRef.current;
-            if (!list || index < 0) {
+            if (index < 0) {
                 return;
             }
-            markProgrammaticScroll();
-            try {
-                list.scrollToIndex({
-                    index,
-                    animated: false,
-                    viewPosition: 0,
-                });
-            } catch {
-                // 越界等情况忽略
+            pendingIndexRef.current = index;
+            if (rafRef.current === null) {
+                rafRef.current = requestAnimationFrame(flushPendingScroll);
             }
         },
-        [markProgrammaticScroll],
+        [flushPendingScroll],
     );
 
     /** 索引条选中某个字母 */
@@ -396,6 +424,10 @@ export default function MusicList(props: IMusicListProps) {
             if (programmaticTimerRef.current) {
                 clearTimeout(programmaticTimerRef.current);
             }
+            if (rafRef.current !== null) {
+                cancelAnimationFrame(rafRef.current);
+                rafRef.current = null;
+            }
         };
     }, []);
 
@@ -443,7 +475,22 @@ export default function MusicList(props: IMusicListProps) {
                 extraData={highlightMusicItem}
                 data={musicList ?? []}
                 getItemLayout={getItemLayout}
-                initialNumToRender={20}
+                /**
+                 * 跳到远处时，位置由 getItemLayout 一次给准，但渲染窗口要重新铺满。
+                 * 默认预算（每批 10 个、批量周期 50ms）跟不上瞬移，会白一下。
+                 * 调大批量、缩短周期，让目标区域尽快铺出来。
+                 */
+                initialNumToRender={24}
+                maxToRenderPerBatch={30}
+                updateCellsBatchingPeriod={10}
+                /**
+                 * Android 上裁切子视图会让跳远后的 cell 来不及恢复 → 空白，
+                 * 显式关掉。
+                 */
+                removeClippedSubviews={false}
+                onScrollToIndexFailed={() => {
+                    // getItemLayout 已给精确布局，理论上不会失败；兜底忽略
+                }}
                 onScrollBeginDrag={handleScrollBegin}
                 onScrollEndDrag={handleScrollEnd}
                 onMomentumScrollEnd={handleScrollEnd}
