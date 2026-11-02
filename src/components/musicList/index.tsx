@@ -45,17 +45,158 @@ interface IMusicListProps {
      * 当前排序方式。
      * 只有按名称排序（标题 / 歌手 / 专辑）时才会出现 A-Z 索引条，
      * 其它排序（时间、未排序）下顺序没有字母规律，索引条没有意义。
-     * 不传则不显示。
      */
     sortType?: SortType;
-    /**
-     * 长按某一项的回调。
-     * MusicItem 本来就有 onItemLongPress，但之前没人传，
-     * 所以长按实际什么都不做。这里把口子开出来。
-     */
+    /** 长按某一项的回调 */
     onItemLongPress?: (musicItem: IMusic.IMusicItem) => void;
 }
+
+/**
+ * 每一行的固定高度。
+ * MusicItem 用的是 ListItem 的 heightType="big"，正好等于 rpx(120)。
+ * 所有行严格等高，所以可以直接用 行数 × ITEM_HEIGHT 算精确偏移。
+ */
 const ITEM_HEIGHT = rpx(120);
+
+/**
+ * A-Z 索引条（含气泡）。
+ *
+ * ⚠️ 必须做成**独立组件**：
+ * 之前把「当前按到哪个字母」的 state 放在 MusicList 主组件里，
+ * 手指每滑过一个字母就 setState 一次 → 整个 MusicList 重渲染 →
+ * FlashList 收到新的 ListHeaderComponent / ListEmptyComponent 引用 →
+ * 重新测量布局 → 列表内容抖一下。这正是"点字母会颤抖、而且有概率"的根因。
+ *
+ * 抽出来之后，按索引条只会重渲染这个小小的索引条，列表完全不受影响。
+ */
+interface IIndexBarProps {
+    items: IIndexItem[];
+    onSelect: (item: IIndexItem) => void;
+}
+
+function IndexBar(props: IIndexBarProps) {
+    const { items, onSelect } = props;
+    const [activePos, setActivePos] = useState<number | null>(null);
+    const heightRef = useRef(0);
+    const lastPosRef = useRef(-1);
+    const timerRef = useRef<any>(null);
+
+    const clearTimer = useCallback(() => {
+        if (timerRef.current) {
+            clearTimeout(timerRef.current);
+            timerRef.current = null;
+        }
+    }, []);
+
+    const hideBubble = useCallback(() => {
+        clearTimer();
+        setActivePos(null);
+        lastPosRef.current = -1;
+    }, [clearTimer]);
+
+    /** 松手后延迟收起气泡，让用户看清最后停在哪 */
+    const release = useCallback(() => {
+        clearTimer();
+        timerRef.current = setTimeout(hideBubble, 500);
+    }, [clearTimer, hideBubble]);
+
+    /** 手指位置 → 第几个字母 → 跳转 */
+    const touch = useCallback(
+        (y: number) => {
+            const total = items.length;
+            const height = heightRef.current;
+            if (!total || !height) {
+                return;
+            }
+            let pos = Math.floor(y / (height / total));
+            if (pos < 0) {
+                pos = 0;
+            } else if (pos > total - 1) {
+                pos = total - 1;
+            }
+            if (pos === lastPosRef.current) {
+                return;
+            }
+            lastPosRef.current = pos;
+            setActivePos(pos);
+            // 兜底：onEnd / onFinalize 都没来（轻点且手势未激活）时气泡也要消失
+            clearTimer();
+            timerRef.current = setTimeout(hideBubble, 1200);
+            onSelect(items[pos]);
+        },
+        [items, onSelect, clearTimer, hideBubble],
+    );
+
+    /**
+     * ⚠️ 用 onBegin，不用 onStart。
+     * onStart 要等手势激活，轻点（无位移）在 Android 上不一定激活 → 轻点没反应。
+     * onBegin 手指一按下就调用，不依赖激活。
+     */
+    const gesture = React.useMemo(
+        () =>
+            Gesture.Pan()
+                .minDistance(0)
+                .onBegin(evt => {
+                    runOnJS(touch)(evt.y);
+                })
+                .onUpdate(evt => {
+                    runOnJS(touch)(evt.y);
+                })
+                .onEnd(() => {
+                    runOnJS(release)();
+                })
+                .onFinalize(() => {
+                    runOnJS(release)();
+                }),
+        [touch, release],
+    );
+
+    useEffect(() => clearTimer, [clearTimer]);
+
+    return (
+        <>
+            <View style={styles.indexBar} pointerEvents="box-none">
+                <GestureDetector gesture={gesture}>
+                    <View
+                        style={styles.indexInner}
+                        collapsable={false}
+                        onLayout={evt => {
+                            heightRef.current = evt.nativeEvent.layout.height;
+                        }}>
+                        {items.map((item, i) => (
+                            <View
+                                key={`${item.key}-${item.index}`}
+                                style={styles.indexItem}>
+                                <ThemeText
+                                    fontSize="description"
+                                    fontColor={
+                                        activePos === i ? "text" : "textSecondary"
+                                    }
+                                    fontWeight={
+                                        activePos === i ? "bold" : "regular"
+                                    }>
+                                    {item.key}
+                                </ThemeText>
+                            </View>
+                        ))}
+                    </View>
+                </GestureDetector>
+            </View>
+            {activePos !== null ? (
+                <View style={styles.bubbleWrap} pointerEvents="none">
+                    <View style={styles.indexBubble}>
+                        <ThemeText
+                            fontSize="appbar"
+                            fontWeight="bold"
+                            fontColor="text">
+                            {items[activePos]?.key}
+                        </ThemeText>
+                    </View>
+                </View>
+            ) : null}
+        </>
+    );
+}
 
 /** 音乐列表 */
 export default function MusicList(props: IMusicListProps) {
@@ -71,26 +212,26 @@ export default function MusicList(props: IMusicListProps) {
         highlightMusicItem,
         sortType,
         onItemLongPress,
-    } = props;    
+    } = props;
     const colors = useColors();
     const flashListRef = useRef<FlashList<IMusic.IMusicItem>>(null);
     const [showBadge, setShowBadge] = useState(false);
     const hideTimeoutRef = useRef<NodeJS.Timeout>();
 
+    /** 列表头部的真实高度，靠 onLayout 测量（它是可变的，不能写死） */
+    const headerHeightRef = useRef(0);
+
     // 查找高亮项的索引
     const highlightIndex = React.useMemo(() => {
         if (!highlightMusicItem || !musicList) return -1;
         return musicList.findIndex(item => isSameMediaItem(item, highlightMusicItem));
-    }, [highlightMusicItem, musicList]);    
-    
-    /**
-     * 索引条数据：只在按名称排序时才有值
-     */
+    }, [highlightMusicItem, musicList]);
+
+    /** 索引条数据：只在按名称排序时才有值 */
     const indexItems = React.useMemo<IIndexItem[]>(() => {
         if (!sortType || !musicList?.length) {
             return [];
         }
-        // 只有这三种是按名称排序的，其余（时间 / 未排序）不出索引条
         let field: "title" | "artist" | "album";
         if (sortType === SortType.Title) {
             field = "title";
@@ -104,141 +245,79 @@ export default function MusicList(props: IMusicListProps) {
         return sampleIndexItems(buildIndexItems(musicList, field));
     }, [musicList, sortType]);
 
-    /** 索引条当前按到的位置（用于气泡和字母高亮），null = 没在按 */
-    const [activeIndexPos, setActiveIndexPos] = useState<number | null>(null);
-    /** 索引条可点击区域的高度，用来算手指落在哪个字母上 */
-    const indexBarHeightRef = useRef(0);
-    /** 上一次触发的位置，避免同一字母重复跳转 */
-    const lastIndexPosRef = useRef(-1);
-    /** 等待「精确校正」的目标，保证连续滑动时只有最后一次生效 */
-    const pendingIndexRef = useRef<number | null>(null);
-    /** 气泡自动收起的兜底定时器 */
-    const bubbleTimerRef = useRef<any>(null);
-
-    /** 跳到某个字母的第一首 */
-    const scrollToIndexItem = useCallback((item: IIndexItem) => {
+    /**
+     * 精确跳到某一行。
+     *
+     * ⚠️ 不用 scrollToIndex：
+     * FlashList 的 scrollToIndex 按 estimatedItemSize **估算**位置，跳过去之后
+     * 目标区域真实渲染出来发现高度对不上，会自己校正一次 —— 那就是"抖一下"。
+     * 之前试过跳两次、延迟 80ms 再校正，都没根治，因为校正本身就会发生。
+     *
+     * 这里改成 **scrollToOffset 直接给像素偏移**，完全绕开估算逻辑：
+     *   offset = 头部真实高度 + 第几行 × 每行固定高度
+     * 所有行都是严格等高的（ListItem heightType="big" = rpx(120)），所以精确。
+     */
+    const scrollToRow = useCallback((index: number) => {
         const list = flashListRef.current;
-        if (!list) {
+        if (!list || index < 0) {
             return;
         }
-        pendingIndexRef.current = item.index;
+        const offset = headerHeightRef.current + index * ITEM_HEIGHT;
         try {
-            list.scrollToIndex({
-                index: item.index,
-                animated: false,
-                viewPosition: 0,
-            });
-        } catch {
-            return;
-        }
-        /**
-         * 抖动的根因：FlashList 第一次跳转是按 estimatedItemSize **估算**位置的，
-         * 目标区域渲染出来后它会自己校正一次，画面就"抖一下"。
-         *
-         * 所以这里等它校正完（80ms，够渲染几帧）再精确跳一次 ——
-         * 此时目标已经在渲染窗口内、高度是真实值，不会再校正，画面就稳了。
-         *
-         * pendingIndexRef 保证连续滑动时只有最后一次校正生效，不会互相打断。
-         */
-        setTimeout(() => {
-            if (pendingIndexRef.current !== item.index) {
-                return;
-            }
-            pendingIndexRef.current = null;
-            try {
-                list.scrollToIndex({
-                    index: item.index,
+            const anyList = list as any;
+            if (typeof anyList.scrollToOffset === "function") {
+                anyList.scrollToOffset({ offset, animated: false });
+            } else {
+                // 极老版本 FlashList 没有 scrollToOffset 时退回按 index 跳
+                anyList.scrollToIndex({
+                    index,
                     animated: false,
                     viewPosition: 0,
                 });
-            } catch {
-                // 忽略
             }
-        }, 80);
+        } catch {
+            // 越界等情况忽略
+        }
     }, []);
 
-    /**
-     * 手指在索引条上的位置 → 对应的字母
-     *
-     * 索引条每项等高，所以直接用「相对高度 / 单项高度」算出第几个，
-     * 不用逐个测量，滑动时开销也小。
-     */
-    const handleIndexTouch = useCallback(
-        (y: number) => {
-            const total = indexItems.length;
-            const height = indexBarHeightRef.current;
-            if (!total || !height) {
-                return;
-            }
-            const itemHeight = height / total;
-            let pos = Math.floor(y / itemHeight);
-            if (pos < 0) {
-                pos = 0;
-            } else if (pos > total - 1) {
-                pos = total - 1;
-            }
-            if (pos === lastIndexPosRef.current) {
-                return;
-            }
-            lastIndexPosRef.current = pos;
-            setActiveIndexPos(pos);
-            /**
-             * 兜底：万一 onEnd / onFinalize 都没来（轻点且手势没激活时可能这样），
-             * 气泡也得自己消失，否则会一直挂在屏幕中间。
-             */
-            if (bubbleTimerRef.current) {
-                clearTimeout(bubbleTimerRef.current);
-            }
-            bubbleTimerRef.current = setTimeout(() => {
-                setActiveIndexPos(null);
-                lastIndexPosRef.current = -1;
-            }, 1200);
-            scrollToIndexItem(indexItems[pos]);
+    /** 索引条选中某个字母 */
+    const onIndexSelect = useCallback(
+        (item: IIndexItem) => {
+            scrollToRow(item.index);
         },
-        [indexItems, scrollToIndexItem],
+        [scrollToRow],
     );
 
-    /** 松手后延迟收起气泡，让用户看清最后停在哪 */
-    const handleIndexRelease = useCallback(() => {
-        if (bubbleTimerRef.current) {
-            clearTimeout(bubbleTimerRef.current);
-            bubbleTimerRef.current = null;
-        }
-        setTimeout(() => {
-            setActiveIndexPos(null);
-            lastIndexPosRef.current = -1;
-        }, 500);
-    }, []);
-
     /**
-     * 索引条手势。
-     *
-     * ⚠️ 这里用的是 **onBegin，不是 onStart**。
-     * onStart 要等手势「激活」才调用，而 Pan 在手指完全没移动时（也就是轻点）
-     * 在 Android 上不一定激活 —— 表现就是轻点没反应、滑动才有用。
-     * onBegin 是手指一按下就调用，不依赖激活，所以轻点也能立刻跳转。
-     *
-     * onUpdate 负责滑动过程中的连续切换，onEnd 负责收起气泡。
-     * 回调跑在 UI 线程，所以通过 runOnJS 回到 JS 线程。
+     * 头部包一层测量用的 View。
+     * 用 useMemo 固定引用，避免 FlashList 因为 header 引用变化而重新测量布局。
      */
-    const indexGesture = React.useMemo(
+    const headerComponent = React.useMemo(() => {
+        if (!Header) {
+            return undefined;
+        }
+        return (
+            <View
+                collapsable={false}
+                onLayout={evt => {
+                    headerHeightRef.current = evt.nativeEvent.layout.height;
+                }}>
+                {Header}
+            </View>
+        );
+    }, [Header]);
+
+    /** 空态 / 底部也固定引用，减少不必要的重渲染 */
+    const emptyComponent = React.useMemo(
+        () => <ListEmpty state={state} onRetry={onRetry} />,
+        [state, onRetry],
+    );
+    const footerComponent = React.useMemo(
         () =>
-            Gesture.Pan()
-                .minDistance(0)
-                .onBegin(evt => {
-                    runOnJS(handleIndexTouch)(evt.y);
-                })
-                .onUpdate(evt => {
-                    runOnJS(handleIndexTouch)(evt.y);
-                })
-                .onEnd(() => {
-                    runOnJS(handleIndexRelease)();
-                })
-                .onFinalize(() => {
-                    // 手势被取消（比如被系统手势打断）也要收起气泡
-                    runOnJS(handleIndexRelease)();
-                }),
-        [handleIndexTouch, handleIndexRelease],
+            musicList?.length ? (
+                <ListFooter state={state} onRetry={onRetry} />
+            ) : null,
+        [musicList?.length, state, onRetry],
     );
 
     // 处理滚动开始
@@ -250,7 +329,7 @@ export default function MusicList(props: IMusicListProps) {
             setShowBadge(true);
         }
     }, [highlightIndex]);
-    
+
     // 处理滚动结束
     const handleScrollEnd = useCallback(() => {
         if (hideTimeoutRef.current) {
@@ -260,135 +339,97 @@ export default function MusicList(props: IMusicListProps) {
         hideTimeoutRef.current = setTimeout(() => {
             setShowBadge(false);
         }, 5000);
-    }, []);    
-    
-    // 滚动到高亮项
+    }, []);
+
+    // 滚动到高亮项（同样用精确偏移）
     const scrollToHighlight = useCallback(() => {
-        if (highlightIndex !== -1 && flashListRef.current) {
-            flashListRef.current.scrollToIndex({
-                index: highlightIndex,
-                animated: false,
-                viewPosition: 0,
-            });
-            // 立即隐藏角标
+        if (highlightIndex !== -1) {
+            scrollToRow(highlightIndex);
             setShowBadge(false);
             if (hideTimeoutRef.current) {
                 clearTimeout(hideTimeoutRef.current);
             }
         }
-    }, [highlightIndex]);    
-    
+    }, [highlightIndex, scrollToRow]);
+
     // 清理定时器
     useEffect(() => {
         return () => {
             if (hideTimeoutRef.current) {
                 clearTimeout(hideTimeoutRef.current);
             }
-            if (bubbleTimerRef.current) {
-                clearTimeout(bubbleTimerRef.current);
-            }
         };
-    }, []);    
-    
+    }, []);
+
+    const renderItem = useCallback(
+        ({ index, item: musicItem }: { index: number; item: IMusic.IMusicItem }) => (
+            <MusicItem
+                musicItem={musicItem}
+                index={showIndex ? index + 1 : undefined}
+                onItemPress={() => {
+                    if (onItemPress) {
+                        onItemPress(musicItem, musicList);
+                    } else {
+                        TrackPlayer.playWithReplacePlayList(
+                            musicItem,
+                            musicList ?? [musicItem],
+                        );
+                    }
+                }}
+                onItemLongPress={
+                    onItemLongPress
+                        ? () => onItemLongPress(musicItem)
+                        : undefined
+                }
+                musicSheet={musicSheet}
+                highlight={isSameMediaItem(musicItem, highlightMusicItem)}
+            />
+        ),
+        [
+            showIndex,
+            onItemPress,
+            musicList,
+            onItemLongPress,
+            musicSheet,
+            highlightMusicItem,
+        ],
+    );
+
     return (
         <View style={styles.container}>
             <FlashList
                 ref={flashListRef}
-                ListHeaderComponent={Header}
-                ListEmptyComponent={<ListEmpty state={state} onRetry={onRetry} />}
-                ListFooterComponent={
-                    musicList?.length ? <ListFooter state={state} onRetry={onRetry} /> : null
-                }
+                ListHeaderComponent={headerComponent}
+                ListEmptyComponent={emptyComponent}
+                ListFooterComponent={footerComponent}
                 extraData={highlightMusicItem}
                 data={musicList ?? []}
                 estimatedItemSize={ITEM_HEIGHT}
                 onScrollBeginDrag={handleScrollBegin}
                 onScrollEndDrag={handleScrollEnd}
                 onMomentumScrollEnd={handleScrollEnd}
-                renderItem={({ index, item: musicItem }) => {
-                    return (
-                        <MusicItem
-                            musicItem={musicItem}
-                            index={showIndex ? index + 1 : undefined}
-                            onItemPress={() => {
-                                if (onItemPress) {
-                                    onItemPress(musicItem, musicList);
-                                } else {
-                                    TrackPlayer.playWithReplacePlayList(
-                                        musicItem,
-                                        musicList ?? [musicItem],
-                                    );
-                                }
-                            }}
-                            onItemLongPress={
-                                onItemLongPress
-                                    ? () => onItemLongPress(musicItem)
-                                    : undefined
-                            }
-                            musicSheet={musicSheet}
-                            highlight={isSameMediaItem(musicItem, highlightMusicItem)}
-                        />
-                    );
-                }}
+                renderItem={renderItem}
                 onEndReached={() => {
-                    if (state === RequestStateCode.IDLE || state === RequestStateCode.PARTLY_DONE) {
+                    if (
+                        state === RequestStateCode.IDLE ||
+                        state === RequestStateCode.PARTLY_DONE
+                    ) {
                         onLoadMore?.();
                     }
                 }}
                 onEndReachedThreshold={0.1}
-            />              
+            />
             {indexItems.length > 1 ? (
-                <View style={styles.indexBar} pointerEvents="box-none">
-                    <GestureDetector gesture={indexGesture}>
-                        <View
-                            style={styles.indexInner}
-                            collapsable={false}
-                            onLayout={evt => {
-                                indexBarHeightRef.current =
-                                    evt.nativeEvent.layout.height;
-                            }}>
-                            {indexItems.map((item, i) => (
-                                <View
-                                    key={`${item.key}-${item.index}`}
-                                    style={styles.indexItem}>
-                                    <ThemeText
-                                        fontSize="description"
-                                        fontColor={
-                                            activeIndexPos === i
-                                                ? "text"
-                                                : "textSecondary"
-                                        }
-                                        fontWeight={
-                                            activeIndexPos === i
-                                                ? "bold"
-                                                : "regular"
-                                        }>
-                                        {item.key}
-                                    </ThemeText>
-                                </View>
-                            ))}
-                        </View>
-                    </GestureDetector>
-                </View>
-            ) : null}
-            {activeIndexPos !== null ? (
-                <View style={styles.bubbleWrap} pointerEvents="none">
-                    <View style={styles.indexBubble}>
-                        <ThemeText
-                            fontSize="appbar"
-                            fontWeight="bold"
-                            fontColor="text">
-                            {indexItems[activeIndexPos]?.key}
-                        </ThemeText>
-                    </View>
-                </View>
+                <IndexBar items={indexItems} onSelect={onIndexSelect} />
             ) : null}
             {showBadge && (
                 <View style={styles.badge} pointerEvents="box-none">
                     <Pressable
-                        style={[styles.badgeButton, { backgroundColor: colors.notification }]}
-                        onPress={scrollToHighlight}
-                    >
+                        style={[
+                            styles.badgeButton,
+                            { backgroundColor: colors.notification },
+                        ]}
+                        onPress={scrollToHighlight}>
                         <Icon
                             name="crosshair"
                             size={iconSizeConst.normal}
@@ -425,7 +466,7 @@ const styles = StyleSheet.create({
         width: "100%",
         justifyContent: "center",
         alignItems: "center",
-        /** 索引条视觉上很窄，把手感区域往左右各扩一点，避免点偏 */
+        /** 视觉上很窄，把手感区域往左右各扩一点，避免点偏 */
         paddingHorizontal: rpx(12),
     },
     /** 气泡的居中容器 */
